@@ -14,7 +14,7 @@ Updated: 25 October 2026. This record distinguishes shipped work, current change
 
 Task-owned v0.1.0 temporary images, verification downloads, build outputs and test caches were cleaned after publication. Supplied Recoverit files and unrelated user files were preserved. New v0.1.1 work generates separate temporary build/research data.
 
-## Current work: v0.1.1
+## Released update: v0.1.1
 
 A Windows USB scan was reported as apparently stalled, followed by sleep and OS error 1. The old regular-file metadata call reproduced OS error 1 on a read-only Windows scratch VHD, and the new reader passed on the same device. The exact physical USB/sleep sequence has not been reproduced. The current work addresses concrete reader, responsiveness, progress and sleep-management weaknesses without claiming that this report proves their causal connection.
 
@@ -27,7 +27,7 @@ A Windows USB scan was reported as apparently stalled, followed by sleep and OS 
 - [x] Translate project-owned documentation into English and publish the English v0.1.0 release description. Preserve third-party notices verbatim and immutable historical source tags.
 - [x] Extend static Recoverit import research and inspect primary PhotoRec/TestDisk source, GNU ddrescue documentation and Microsoft API contracts. No proprietary code or binaries added; see [RECOVERY_IO_RESEARCH.md](docs/RECOVERY_IO_RESEARCH.md).
 - [x] Run final integrated Rust/frontend checks (89 tests), three native installer preflight builds, Windows VHD/manifest checks and macOS raw/power probes; record actual results in [VALIDATION.md](docs/VALIDATION.md).
-- [ ] Publish v0.1.1 Windows/macOS installers with matching source/checksums and verify uploaded assets.
+- [x] Publish [v0.1.1](https://github.com/ANAYSSA/memory-regainer/releases/tag/v0.1.1) Windows/macOS installers with matching source/checksums, verify uploaded assets and clean task-owned temporary files.
 
 The checked boxes above indicate implementation or documentation work, not Windows USB hardware qualification. The release's exact executed validation is recorded separately.
 

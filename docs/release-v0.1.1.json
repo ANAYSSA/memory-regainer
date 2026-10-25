@@ -1,0 +1,37 @@
+{
+  "version": "0.1.1",
+  "tag_commit": "f0f153cc191269132e23e45cba34e356ea4ecf01",
+  "release_url": "https://github.com/ANAYSSA/memory-regainer/releases/tag/v0.1.1",
+  "native_release_build": "https://github.com/ANAYSSA/memory-regainer/actions/runs/40208121042",
+  "source_verification": "https://github.com/ANAYSSA/memory-regainer/actions/runs/40208119159",
+  "rust_tests": 51,
+  "frontend_tests": 38,
+  "assets": [
+    {
+      "name": "Memory.Regainer_0.1.1_aarch64.dmg",
+      "size": 3141412,
+      "sha256": "8c97cc9efd0e03849cba943518ff0f043b2c54a15d9e4c107fc66ba0c4aae7a6",
+      "checksum_verified": true,
+      "dmg_verified": true
+    },
+    {
+      "name": "Memory.Regainer_0.1.1_x64.dmg",
+      "size": 3292229,
+      "sha256": "37910dbab0b5ffe3b51916d68dfd469325eb8d5ba7449b494ed9f0db6b08c20d",
+      "checksum_verified": true,
+      "dmg_verified": true
+    },
+    {
+      "name": "memory-regainer-source.tar.gz",
+      "size": 726008,
+      "sha256": "1ce6c337de575879d60ac47a84c22d9be40ac0db4a6796565e1815b19d33dcba",
+      "checksum_verified": true
+    },
+    {
+      "name": "Memory.Regainer_0.1.1_x64-setup.exe",
+      "size": 2265592,
+      "sha256": "a424cff954dccd4b9bb8a89f55e491cc1853be33164263a949208a93c47ed285",
+      "checksum_verified": true
+    }
+  ]
+}
