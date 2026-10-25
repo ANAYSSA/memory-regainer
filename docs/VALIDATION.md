@@ -33,3 +33,7 @@ Original fixture hashes are checked in at [SHA256.json](../crates/recovery-core/
 The license inventory is a metadata check and notice collection step, not legal clearance. It includes build-only and other-platform dependencies. RustSec and npm audits depend on the advisory databases available at execution time.
 
 The final exFAT engine is covered by the automated tests and read-only filesystem check. The native interactive smoke tests preceded that addition; the Mac was subsequently locked. Windows/Intel installers were built and automatically tested, not interactively installed in this session. Native build evidence for the tagged revision is available in the release workflow.
+
+## Published release verification
+
+v0.1.0 published successfully from commit `2ea7d8a8683db758bc1d6eea5c1108908ff05089`. [All three native tagged builds](https://github.com/ANAYSSA/memory-regainer/actions/runs/40203903188) and [final source verification](https://github.com/ANAYSSA/memory-regainer/actions/runs/40203900994) passed. All three downloaded installers and matching source archive passed SHA-256 verification; both published DMGs passed `hdiutil verify`. Published checksum filenames were normalized to match GitHub asset names. Structured sizes/hashes are recorded in [release-v0.1.0.json](release-v0.1.0.json).

@@ -50,3 +50,5 @@ Updated: 25 October 2026. This file is a continuation record, not a claim of ful
 6. Add signed/notarized release builds when signing credentials become available; investigate APFS recovery separately.
 
 Final local integration before tagging: 36 Rust tests + 18 frontend tests passed; formatting, strict Clippy, lint and production frontend build passed. Local DMG verified and launched; GUI imaging and saved-session restart passed. Native preflight installers for all three platforms passed; tagged release publication remains the next action.
+
+Release v0.1.0 is published: https://github.com/ANAYSSA/memory-regainer/releases/tag/v0.1.0 . Final Windows x64 and macOS ARM64/Intel builds and tests passed; published artifact hashes verified. The next engineering work is the documented unsupported functionality, not completion of this installer release. Task-owned test images, downloaded verification copies, development build outputs and test application caches are being cleaned up at the user request.

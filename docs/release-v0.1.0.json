@@ -1,0 +1,37 @@
+{
+  "release_url": "https://github.com/ANAYSSA/memory-regainer/releases/tag/v0.1.0",
+  "tag_commit": "2ea7d8a8683db758bc1d6eea5c1108908ff05089",
+  "build_run": "https://github.com/ANAYSSA/memory-regainer/actions/runs/40203903188",
+  "verification_run": "https://github.com/ANAYSSA/memory-regainer/actions/runs/40203900994",
+  "native_builds": [
+    "windows-x64",
+    "macos-apple-silicon",
+    "macos-intel"
+  ],
+  "rust_tests": 36,
+  "frontend_tests": 18,
+  "dmg_integrity_verified": true,
+  "download_checksums_verified": true,
+  "assets": [
+    {
+      "name": "memory-regainer-source.tar.gz",
+      "bytes": 707680,
+      "sha256": "c1c13541c0b2240bf570e41a03a944c73b7d1552e5291314beac8d9a9c988f7c"
+    },
+    {
+      "name": "Memory.Regainer_0.1.0_x64.dmg",
+      "bytes": 3274925,
+      "sha256": "0812962153aa367b2a219be1b89f28835dd58a7ebdcce90b933f454811f39320"
+    },
+    {
+      "name": "Memory.Regainer_0.1.0_x64-setup.exe",
+      "bytes": 2249636,
+      "sha256": "07df1f63b9e839555659fca3bbfbdfde6bf71caa0f33208bc6a23fa2d420ba94"
+    },
+    {
+      "name": "Memory.Regainer_0.1.0_aarch64.dmg",
+      "bytes": 3126769,
+      "sha256": "a15b809d0c4675bb32b7631eb759308c279d41f15e5f45b3195a38fae2f24d2d"
+    }
+  ]
+}

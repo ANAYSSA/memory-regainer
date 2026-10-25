@@ -16,7 +16,7 @@ destination = root / "release-artifacts"
 destination.mkdir(exist_ok=True)
 checksums = []
 for source in files:
-    output = destination / source.name
+    output = destination / source.name.replace(" ", ".")
     shutil.copy2(source, output)
     digest = hashlib.sha256()
     with output.open("rb") as stream:
