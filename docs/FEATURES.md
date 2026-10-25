@@ -5,7 +5,7 @@ Status describes implementation scope. See [VALIDATION.md](VALIDATION.md) for te
 | Filesystem / layout | Detection | Metadata undelete | Names / hierarchy | Raw carving |
 | --- | --- | --- | --- | --- |
 | FAT12 / FAT16 / FAT32 | Boot-parameter validation | Free-cluster contiguous candidates only, normally low confidence | Deleted-record evidence where available; missing/ambiguous name characters and paths must be treated as uncertain | Implemented handlers below |
-| exFAT | Signature only | Unsupported | Unsupported | Implemented handlers only |
+| exFAT 1.00 | Main boot checksum and bounded geometry validation | Intact inactive NoFatChain streams on clean single-FAT volumes; all candidate clusters must be free in the current allocation bitmap | Unicode names from intact entry sets; searches live directories; deleted-directory reconstruction unsupported | Implemented handlers only |
 | NTFS | Signature only | Unsupported | Unsupported | Implemented handlers only |
 | ext2 / ext3 / ext4 | Shared ext signature only; not a full feature classification | Unsupported | Unsupported | Implemented handlers only |
 | APFS | Container magic only | Unsupported | Unsupported; no snapshots or encryption support | Accessible raw bytes only |
@@ -15,11 +15,15 @@ Status describes implementation scope. See [VALIDATION.md](VALIDATION.md) for te
 
 Metadata-based recovery can preserve extensions for types that have no dedicated carver. This does not imply a validated format-specific parser. FAT candidates assume contiguous content and require every assumed cluster to be currently free. Records whose clusters are allocated are skipped. Deleted allocation chains and fragmented deleted files are not reconstructed. Surviving live-directory chains are traversed to locate deleted records; deleted directories are not reconstructed. Inspect each result's notes.
 
+exFAT recovery is an independent implementation based on the public Microsoft specification. It validates the main boot-region checksum, geometry, metadata FAT-chain bounds, and current allocation bitmap. Deleted File/Stream/Name entry sets must have an intact checksum when their former InUse bits are reconstructed. This checksum test is a recovery heuristic: inactive entries are not authoritative filesystem metadata. Only NoFatChain contiguous files with `ValidDataLength == DataLength` and currently free content clusters are candidates. Results have low confidence because freed bytes may already have been overwritten.
+
+Live directories are traversed using their FAT chains or NoFatChain extents. Dirty/media-failure volumes, TexFAT/two-FAT volumes, deleted directories, fragmented deleted files, partly initialized streams, and empty-file undelete are unsupported. NameHash is not checked against the up-case table, and the parser does not validate the backup boot region or certify full filesystem consistency. The source remains read-only. Exact reconstruction is tested on generated deleted-file fixtures; this does not qualify every real-world exFAT device or deletion pattern.
+
 ## Scan modes
 
-- Quick inspects supported FAT metadata. Its byte counter measures processed work, not a claim that every source sector was read.
+- Quick inspects supported FAT/exFAT metadata. Its byte counter measures processed work, not a claim that every source sector was read.
 - Deep performs metadata inspection and sequential signature scanning. It operates on real bytes and stops on read errors.
-- Advanced applies a start/end byte range. End offsets are exclusive. Reads stay inside the selected range. For a partial-source range, global partition tables are skipped; FAT metadata recovery requires a complete FAT volume beginning at the selected start. It does not repair partition tables or recover filesystem features absent from Quick/Deep.
+- Advanced applies a start/end byte range. End offsets are exclusive. Reads stay inside the selected range. For a partial-source range, global partition tables are skipped; FAT/exFAT metadata recovery requires a complete volume beginning at the selected start. It does not repair partition tables or recover filesystem features absent from Quick/Deep.
 
 The MBR parser covers primary partitions and reports unsupported extended/logical chains. GPT validates primary header/table CRCs and bounds. There is no damaged backup-GPT repair, lost-partition forensic search or partition write operation.
 

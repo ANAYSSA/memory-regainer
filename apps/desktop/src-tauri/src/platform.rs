@@ -2,6 +2,15 @@ use crate::Source;
 use serde_json::Value;
 use std::{collections::BTreeSet, fs::File, path::Path, process::Command};
 
+#[cfg(target_os = "windows")]
+fn powershell() -> Command {
+    use std::os::windows::process::CommandExt;
+    let mut command = Command::new("powershell.exe");
+    // CREATE_NO_WINDOW: native enumeration must not flash a console window.
+    command.creation_flags(0x08000000);
+    command
+}
+
 #[cfg(target_os = "macos")]
 fn diskutil(args: &[&str]) -> Result<Value, String> {
     use std::io::Write;
@@ -73,7 +82,7 @@ pub fn sources() -> Result<Vec<Source>, String> {
     }
     #[cfg(target_os = "windows")]
     {
-        let out = Command::new("powershell.exe").args(["-NoProfile", "-NonInteractive", "-Command", "Get-Disk | Select-Object Number,FriendlyName,Size,BusType,IsOffline | ConvertTo-Json -Compress"]).output().map_err(|e|e.to_string())?;
+        let out = powershell().args(["-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); Get-Disk | Select-Object Number,FriendlyName,Size,BusType,IsOffline | ConvertTo-Json -Compress"]).output().map_err(|e|e.to_string())?;
         if !out.status.success() {
             return Err(String::from_utf8_lossy(&out.stderr).into_owned());
         }
@@ -204,7 +213,7 @@ fn physical_media(path: &Path) -> Result<BTreeSet<String>, String> {
         format!("$v = Get-Volume -FilePath '{quoted}' -ErrorAction Stop; $part = @(Get-Partition -Volume $v -ErrorAction Stop); $disks = @($part | Get-Disk -ErrorAction Stop);")
     };
     let script = format!("$ErrorActionPreference='Stop'; {disk_script} if ($disks.Count -eq 0) {{ throw 'No physical mapping' }}; foreach ($disk in $disks) {{ if ($disk.BusType -notin @('USB','SATA','SAS','SCSI','NVMe','SD','MMC','ATA')) {{ throw 'Virtual, RAID or unknown media is not supported for safe destination mapping' }} }}; @($disks | Select-Object -ExpandProperty Number) | ConvertTo-Json -Compress");
-    let out = Command::new("powershell.exe")
+    let out = powershell()
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .output()
         .map_err(|e| e.to_string())?;
@@ -290,12 +299,10 @@ pub fn check_free_space(destination: &Path, required: u64) -> Result<(), String>
     };
     #[cfg(windows)]
     let available = {
-        let path = destination
-            .to_str()
-            .ok_or("Invalid destination")?
-            .replace('\'', "''");
+        let raw = destination.to_str().ok_or("Invalid destination")?;
+        let path = raw.strip_prefix(r"\\?\").unwrap_or(raw).replace('\'', "''");
         let script = format!("$ErrorActionPreference='Stop'; (Get-Volume -FilePath '{path}' -ErrorAction Stop).SizeRemaining");
-        let out = Command::new("powershell.exe")
+        let out = powershell()
             .args(["-NoProfile", "-NonInteractive", "-Command", &script])
             .output()
             .map_err(|e| e.to_string())?;

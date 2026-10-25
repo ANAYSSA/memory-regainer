@@ -55,6 +55,8 @@ struct JobStatus {
     mode: String,
     #[serde(rename = "sourceName")]
     source_name: String,
+    #[serde(rename = "sourceId")]
+    source_id: String,
     status: String,
     progress: Progress,
     entries: Vec<Entry>,
@@ -242,6 +244,7 @@ fn begin(
                     id: key.clone(),
                     mode: options.mode.clone(),
                     source_name: source.source.name.clone(),
+                    source_id: source.source.id.clone(),
                     status: "running".into(),
                     progress: Progress {
                         scanned: 0,
@@ -474,6 +477,10 @@ fn safe_name(name: &str) -> String {
         .take(100)
         .collect();
     s = s.trim_matches([' ', '.']).to_owned();
+    while s.len() > 180 {
+        s.pop();
+    }
+    s = s.trim_end_matches([' ', '.']).to_owned();
     if s.is_empty() {
         s = "recovered".into()
     }
@@ -1021,6 +1028,7 @@ mod tests {
             assert_ne!(n, "CON");
             assert_ne!(n, "NUL.txt");
         }
+        assert!(safe_name(&"фотография📷".repeat(100)).len() <= 180);
     }
     #[test]
     fn detects_changed_image() {
@@ -1086,5 +1094,7 @@ mod tests {
         };
         assert!(platform::ensure_separate_device(&source, &std::env::temp_dir()).is_err());
         assert!(platform::check_free_space(&std::env::temp_dir(), u64::MAX).is_err());
+        let canonical = std::env::temp_dir().canonicalize().unwrap();
+        platform::check_free_space(&canonical, 1).expect("A healthy test directory must accept a small output, including Windows canonical paths");
     }
 }

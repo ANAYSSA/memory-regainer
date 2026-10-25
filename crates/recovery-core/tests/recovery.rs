@@ -229,7 +229,7 @@ fn corrupt_png_crc_and_short_signatures_are_rejected() {
     assert!(scan_now(&f.0, "deep").entries.is_empty());
 }
 #[test]
-fn quick_does_not_claim_unsupported_metadata_recovery() {
+fn quick_does_not_claim_unusable_metadata_recovery() {
     for (magic, label) in [
         (b"EXFAT   ".as_slice(), "exFAT"),
         (b"NTFS    ".as_slice(), "NTFS"),
@@ -240,7 +240,11 @@ fn quick_does_not_claim_unsupported_metadata_recovery() {
         let r = scan_now(&f.0, "quick");
         assert!(r.entries.is_empty());
         assert!(r.partitions[0].filesystem.starts_with(label));
-        assert!(r.warnings.iter().any(|s| s.contains("unavailable")));
+        assert!(r.warnings.iter().any(|s| s.contains(if label == "exFAT" {
+            "invalid boot sector"
+        } else {
+            "unavailable"
+        })));
     }
 }
 #[test]

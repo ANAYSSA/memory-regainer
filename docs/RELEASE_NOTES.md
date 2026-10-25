@@ -1,6 +1,8 @@
 Memory Regainer is an early, independently implemented, offline recovery utility.
 
-This prerelease focuses on safe image-based recovery, FAT metadata recovery and a small, explicitly bounded set of signature carvers. See the source README and feature matrix for the exact supported behavior. Recognition of a filesystem does not mean deleted-file recovery is implemented for it. A recognizable header does not guarantee an intact file.
+This prerelease focuses on safe image-based recovery, FAT metadata recovery, narrow exFAT metadata undelete and seven bounded signature carvers. See the source README and feature matrix for the exact supported behavior. Recognition of a filesystem does not mean deleted-file recovery is implemented for it. A recognizable header does not guarantee an intact file.
+
+The exFAT implementation supports clean single-FAT revision 1.00 volumes and intact inactive entry sets for fully initialized contiguous NoFatChain files. It preserves Unicode names, traverses live directories, and requires every candidate data cluster to be free in the current allocation bitmap. Inactive entry checksums are interpreted as a recovery heuristic and results remain low-confidence. Fragmented deleted streams, deleted directories, partial initialization, TexFAT and NameHash/up-case validation are not supported. Deleted-PDF fixture recovery is hash-checked; the generated fixture also passed native read-only filesystem validation.
 
 Installers are built by native GitHub-hosted Windows and macOS runners. A successful build confirms compilation and the included automated tests; it does not establish that raw access works on every device or that the installer was interactively tested on every OS version.
 

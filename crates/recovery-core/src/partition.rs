@@ -20,7 +20,7 @@ pub(crate) fn filesystem(source: &mut Source, offset: u64, size: u64) -> Result<
     }
     let b = source.bytes(offset, 512)?;
     if &b[3..11] == b"EXFAT   " {
-        return Ok("exFAT (detection only)".into());
+        return Ok("exFAT".into());
     }
     if &b[3..11] == b"NTFS    " {
         return Ok("NTFS (detection only)".into());

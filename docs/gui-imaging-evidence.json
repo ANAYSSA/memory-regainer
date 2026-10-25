@@ -1,0 +1,9 @@
+{
+  "platform": "macOS 27.0.1 Apple Silicon",
+  "build": "Application launched from verified local DMG",
+  "source": "Synthetic FAT32 lab image",
+  "bytes": 33827840,
+  "sha256": "013516774c5ece8385f3d0b92ce63f661757a428b4ba65fe2a97ad20cea4ef82",
+  "identical": true,
+  "report_status": "verified-image"
+}

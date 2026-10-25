@@ -6,18 +6,22 @@ An independent, offline desktop file-recovery application built with Rust, Tauri
 
 **Early prerelease:** this is a working foundation with deliberately limited recovery coverage. It is not a substitute for a mature forensic suite or professional handling of physically failing storage. Overwritten bytes, SSD TRIM and inaccessible encrypted data cannot be recovered by this software.
 
-**По-русски:** приложение работает локально, поддерживает русский и английский интерфейс. Начните с копии образа диска. Быстрое сканирование ищет удалённые записи FAT; глубокое — ограниченный набор сигнатур. Восстановление NTFS, exFAT и APFS по метаданным пока не реализовано. Сохраняйте результат на здоровый отдельный носитель.
+**По-русски:** приложение работает локально, поддерживает русский и английский интерфейс. Начните с копии образа диска. Быстрое сканирование ищет удалённые записи FAT и ограниченный набор записей exFAT; глубокое — семь типов сигнатур. Для exFAT поддерживаются целые непрерывные файлы на чистом томе с одной FAT, если bitmap отмечает их кластеры свободными. Восстановление NTFS, ext4 и APFS по метаданным пока не реализовано. Сохраняйте результат на здоровый отдельный носитель.
+
+[Download EXE / DMG releases](https://github.com/ANAYSSA/memory-regainer/releases) · [Validation evidence](docs/VALIDATION.md)
 
 ## Get started
 
 1. Stop writing to the affected storage. Prefer a raw disk image created on healthy storage.
 2. Open the image in Memory Regainer, or select an accessible physical device. No automatic privilege elevation is performed.
-3. Choose **Quick Scan** for FAT deleted directory records or **Deep Scan** for the implemented file signatures. **Advanced Scan** adds an explicit byte range.
+3. Choose **Quick Scan** for supported FAT/exFAT deleted directory records or **Deep Scan** for the implemented file signatures. **Advanced Scan** adds an explicit byte range.
 4. Review evidence, notes and previews. Results are populated from actual source bytes; counts alone do not establish successful recovery.
 5. Select files and choose a healthy destination. The app writes into a new recovery folder and verifies copied bytes using SHA-256 read-back.
 6. Inspect `recovery-report.json`. A verified copy establishes copy integrity; it does not prove that pre-deletion bytes were intact.
 
 The application is designed for Windows 10/11 x64 and macOS Apple Silicon / Intel. Native installer builds and automated tests are defined in [GitHub Actions](.github/workflows/release.yml). Build completion, interactive installer testing and raw-device qualification are different checks: see [validation](docs/VALIDATION.md) for actual evidence. Linux source support is secondary and has no packaged release in this milestone. Windows ARM64 is not qualified.
+
+Windows requires the Microsoft WebView2 runtime; the installer can obtain it if absent. Recovery itself works offline.
 
 Unsigned installers can trigger Windows SmartScreen or macOS Gatekeeper. macOS builds are not Developer ID signed or notarized. Do not bypass security prompts for a build you have not chosen to trust; compare its SHA-256 checksum and source revision.
 
@@ -28,8 +32,9 @@ Unsigned installers can trigger Windows SmartScreen or macOS Gatekeeper. macOS b
 | Recovery engine | Real read-only reads, bounded parser buffers, checked byte extents, cancellation |
 | Partitions | MBR primary entries; GPT primary header/table CRC checks; 512/4096-byte GPT sectors; protective-MBR handling |
 | FAT12/16/32 | Deleted directory-record recovery with explicit confidence and reconstruction notes; see [feature matrix](docs/FEATURES.md) |
+| exFAT | Narrow metadata undelete: clean single-FAT revision 1.00 volumes, intact inactive entry sets, Unicode names, fully initialized contiguous NoFatChain files whose clusters are currently free |
 | Signature carving | JPEG, PNG, PDF, GIF, ZIP, BMP and WAV boundary handlers, with type-specific limits and structural checks |
-| Other filesystems | Several signatures detected; no claim of metadata undelete for NTFS, exFAT, ext4, APFS, HFS+, Btrfs, XFS or ReFS |
+| Other filesystems | Several signatures detected; no claim of metadata undelete for NTFS, ext4, APFS, HFS+, Btrfs, XFS or ReFS |
 | Desktop | Actual engine progress, cancellation, searchable/filtered virtualized result table, selection and recovery reports; Russian/English and theme controls |
 | Preview | Bounded raster image, UTF-8 text and hex previews; no executable or macro execution |
 | Imaging | Sequential raw image acquisition, cancellation, first-read-error stop, SHA-256 read-back and acquisition report |

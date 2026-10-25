@@ -1,6 +1,7 @@
 //! Read-only recovery primitives. No function in this crate opens a source for writing.
 //! A recognisable record is evidence, never a guarantee of recoverable content.
 mod carve;
+mod exfat;
 mod fat;
 mod partition;
 
@@ -186,7 +187,7 @@ pub fn scan(
         // and filesystem structures outside the user's range must not be read.
         source.lower_bound = start;
         source.len = end;
-        warnings.push("A bounded range reads only the selected bytes. Global partition tables are skipped; metadata undelete requires a complete FAT volume beginning at the selected start.".into());
+        warnings.push("A bounded range reads only the selected bytes. Global partition tables are skipped; metadata undelete requires a complete FAT/exFAT volume beginning at the selected start.".into());
         let filesystem = partition::filesystem(&mut source, start, end - start)?;
         vec![Partition {
             name: "Selected byte range".into(),
@@ -211,15 +212,21 @@ pub fn scan(
         if part.offset < start || part.offset >= end {
             continue;
         }
-        if part.filesystem.starts_with("FAT") {
-            match fat::scan_deleted(&mut source, part, cancel, &mut |n, count| {
+        if part.filesystem.starts_with("FAT") || part.filesystem == "exFAT" {
+            let mut report = |n, count| {
                 scanned = scanned.saturating_add(n);
                 on_progress(Progress {
                     scanned: scanned.min(total),
                     total,
                     found: entries.len() + count,
                 });
-            }) {
+            };
+            let result = if part.filesystem == "exFAT" {
+                exfat::scan_deleted(&mut source, part, cancel, &mut report)
+            } else {
+                fat::scan_deleted(&mut source, part, cancel, &mut report)
+            };
+            match result {
                 Ok((mut found, notices)) => {
                     entries.append(&mut found);
                     warnings.extend(notices);
