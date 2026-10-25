@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/tauri-apps/libappindicator-rs",
+  "revision": "eafd1e3682a1247f595410266091e9684021cb6f",
+  "sources": [
+    {
+      "file": "LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/tauri-apps/libappindicator-rs/eafd1e3682a1247f595410266091e9684021cb6f/LICENSE-APACHE"
+    },
+    {
+      "file": "LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/tauri-apps/libappindicator-rs/eafd1e3682a1247f595410266091e9684021cb6f/LICENSE-MIT"
+    }
+  ]
+}

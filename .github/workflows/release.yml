@@ -1,0 +1,91 @@
+name: Build installers
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+            artifact: windows-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bundles: dmg
+            artifact: macos-apple-silicon
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: dmg
+            artifact: macos-intel
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Install frontend dependencies
+        working-directory: apps/desktop
+        run: npm ci
+      - name: Frontend tests
+        working-directory: apps/desktop
+        run: npm test -- --run
+      - name: Frontend typecheck and build
+        working-directory: apps/desktop
+        run: npm run build
+      - name: Recovery and backend tests
+        run: cargo test --workspace --locked --target ${{ matrix.target }}
+      - name: Build native installer
+        working-directory: apps/desktop
+        run: npm run tauri -- build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Collect installers and checksums
+        run: python scripts/collect_artifacts.py "${{ matrix.target }}" "${{ matrix.artifact }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: release-artifacts/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+      - name: Package matching source and legal notices
+        run: |
+          git archive --format=tar.gz --prefix=memory-regainer/ HEAD > release-artifacts/memory-regainer-source.tar.gz
+          cp LICENSE THIRD_PARTY_NOTICES.md LEGAL.md release-artifacts/
+          cd release-artifacts
+          sha256sum memory-regainer-source.tar.gz > source-SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          name: Memory Regainer ${{ github.ref_name }}
+          body_path: docs/RELEASE_NOTES.md
+          files: release-artifacts/*
+          fail_on_unmatched_files: true

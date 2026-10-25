@@ -1,0 +1,4 @@
+{
+  "note": "License texts retained from sibling winapi 0.3.9 package; GNU import-library packages declare the same MIT/Apache-2.0 choice. These packages are not used by the MSVC Windows release target.",
+  "source": "https://crates.io/crates/winapi/0.3.9"
+}

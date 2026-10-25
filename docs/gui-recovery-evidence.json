@@ -1,0 +1,24 @@
+{
+  "platform": "macOS 27.0.1 Apple Silicon",
+  "test": "Native Tauri app: native file dialog -> Quick scan -> JPEG preview -> select all -> recover -> completion report. Only synthetic disk image used.",
+  "results": [
+    {
+      "file": "000001__EMORY.JPG",
+      "bytes": 828,
+      "sha256": "8f5d588b317879812a062958575cd76af466761fd5e30e809b1d2ed70322b97e",
+      "matches_original": true
+    },
+    {
+      "file": "000002__HOTO.PNG",
+      "bytes": 75,
+      "sha256": "e6d66889131220f931fddfb05730d647a0992456c63ae0a8154b4ae32ff219ef",
+      "matches_original": true
+    },
+    {
+      "file": "000003__OTES.TXT",
+      "bytes": 76,
+      "sha256": "828b70eb19e3fd6bd1539d2b7415635916145e0decae59b799b28839b4c5f8c7",
+      "matches_original": true
+    }
+  ]
+}

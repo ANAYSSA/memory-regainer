@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/rust-windowing/android-ndk-rs",
+  "revision": "10f2ba388fca20f7349996ebae26ccda7a6fda5c",
+  "sources": [
+    {
+      "file": "LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/rust-mobile/ndk/10f2ba388fca20f7349996ebae26ccda7a6fda5c/LICENSE-APACHE"
+    },
+    {
+      "file": "LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/rust-mobile/ndk/10f2ba388fca20f7349996ebae26ccda7a6fda5c/LICENSE-MIT"
+    }
+  ]
+}

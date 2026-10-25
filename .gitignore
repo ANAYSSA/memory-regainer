@@ -1,0 +1,12 @@
+/target/
+**/node_modules/
+**/dist/
+**/.DS_Store
+**/gen/schemas/
+*.img
+*.dmg
+*.exe
+*.msi
+.env*
+!*.example
+/work/

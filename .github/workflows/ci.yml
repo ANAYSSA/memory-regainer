@@ -1,0 +1,68 @@
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install frontend dependencies
+        working-directory: apps/desktop
+        run: npm ci
+      - name: Typecheck and build frontend
+        working-directory: apps/desktop
+        run: npm run build
+      - name: Frontend tests
+        working-directory: apps/desktop
+        run: npm test -- --run
+      - name: Frontend lint
+        working-directory: apps/desktop
+        run: npm run lint
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+      - name: Rust lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Rust unit and recovery tests
+        run: cargo test --workspace --locked
+      - name: Production JavaScript dependency audit
+        working-directory: apps/desktop
+        run: npm audit --omit=dev --audit-level=high
+      - name: Dependency license inventory
+        run: python3 scripts/dependency_inventory.py --check
+
+  rust-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-0.22.2-${{ runner.os }}
+      - name: Install pinned audit tool
+        run: command -v cargo-audit || cargo install cargo-audit --version 0.22.2 --locked
+      - name: Check RustSec advisories
+        run: cargo audit

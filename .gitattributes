@@ -1,0 +1,11 @@
+docs/third-party-licenses/** -text -whitespace
+docs/upstream-license-supplements/** -text -whitespace
+*.pdf binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.bmp binary
+*.wav binary
+*.zip binary
+*.ico binary
+*.icns binary
