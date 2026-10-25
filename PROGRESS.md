@@ -54,3 +54,7 @@ The checked boxes above indicate implementation or documentation work, not Windo
 ## Current update: v0.1.2
 
 Implemented decimal MB/GB display, clear subsecond timing and metadata-only Quick completion, neutral partition/method information, and focused FAT error isolation. Local integrated tests passed (56 Rust + 38 frontend). The extended Recoverit report records selected actual instruction/call paths, including SD profile detection and video reconstruction/repair. No new video-recovery implementation is claimed. The tagged native builds, publication and downloaded-asset verification passed; details are in [VALIDATION.md](docs/VALIDATION.md). Research scratch was removed and user originals preserved. The user then requested actual MP4/MOV recovery, now being implemented for v0.1.3.
+
+## Current update: v0.1.3 video recovery
+
+Implemented independent contiguous MP4/MOV carving for Deep/Advanced, with container/sample-table and AVC/HEVC configuration framing checks, 64-bit geometry and explicit unsupported cases. Deep is the initial UI mode; MP4/MOV filters and video guidance are available. Six real synthetic clips recover byte-for-byte and decode successfully. Local verification passed 83 Rust and 40 frontend tests, strict Clippy, formatting, build/lint and dependency inventory. Native release publication and final cleanup remain pending.

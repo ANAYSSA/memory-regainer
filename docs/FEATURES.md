@@ -29,9 +29,17 @@ The MBR parser covers primary partitions and reports unsupported extended/logica
 
 ## Carving
 
-The registry contains seven handlers: `jpg`, `png`, `pdf`, `gif`, `zip`, `bmp`, `wav`. Each has a bounded boundary parser; confidence reflects the evidence that parser actually checks. Image/PDF candidates are limited to 256 MiB; ZIP/WAV candidates to 1 GiB. These are defensive parser bounds, not paid recovery quotas. ZIP64, encrypted ZIP and ZIP data descriptors are not supported. Compressed pixels, archive payloads and PDF objects are not fully decoded. A complete-looking header/footer is not an authenticity or semantic-validity guarantee. ZIP can contain office documents, but the engine does not advertise each contained office format as an independently tested carver. Text and source code without reliable boundaries require metadata-based recovery.
+The registry contains nine handlers: `jpg`, `png`, `pdf`, `gif`, `zip`, `bmp`, `wav`, `mp4`, `mov`. Each has a bounded boundary parser; confidence reflects the evidence that parser actually checks. Image/PDF candidates are limited to 256 MiB; ZIP/WAV candidates to 1 GiB. These are defensive parser bounds, not paid recovery quotas. ZIP64, encrypted ZIP and ZIP data descriptors are not supported. Compressed pixels, archive payloads and PDF objects are not fully decoded. A complete-looking header/footer is not an authenticity or semantic-validity guarantee. ZIP can contain office documents, but the engine does not advertise each contained office format as an independently tested carver. Text and source code without reliable boundaries require metadata-based recovery.
 
-MP4, MOV, MKV, audio formats other than WAV, camera RAW, HEIC, TIFF, RAR, 7z, SQLite and executable-specific carving are not implemented. PDF preview, audio playback, video playback and general document parsing are not implemented.
+MKV, MXF, MTS, audio formats other than WAV, camera RAW, HEIC, TIFF, RAR, 7z, SQLite and executable-specific carving are not implemented. PDF preview, audio playback, video playback and general document parsing are not implemented.
+
+## MP4/MOV content recovery (v0.1.3)
+
+Deep and Advanced scans recognize classic self-contained MP4/MOV containers stored in one contiguous range on the source. Movie metadata may precede or follow media data. The parser requires an intact `ftyp`, `moov`, a video track and explicitly sized `mdat` data. It validates box bounds, sample descriptions, local data references, sample counts/sizes, sample-to-chunk mappings and chunk offsets against media-data ranges. Extended-size boxes and 64-bit chunk offsets use checked 64-bit arithmetic; the older ZIP/WAV 1 GiB candidate cap does not apply to video.
+
+Video metadata safety limits are 512 MiB per movie box, 100,000 parsed boxes, 4,096 top-level boxes, 64 tracks, 256 media-data atoms, and 64 data references or sample descriptions per track. Per-track table limits are 100 million samples, 20 million chunks and one million runs. Tables use 64 KiB buffers. Chunk ranges must be ordered and nonoverlapping within each track. These are parser work limits, not a paid recovery quota.
+
+These checks do not decode video or audio in the running app. Overwritten media payload can still have consistent container metadata. Arbitrarily fragmented files, `moof`/`mvex` fragmented MP4, missing `moov`, compressed movie metadata, reference movies, encrypted tracks, zero-size media-data boxes and legacy MOV without `ftyp` are unsupported. Recovered video has a generated name; use a local player after saving to a different healthy destination. Test fixtures, exact hashes, local decoding evidence and remaining qualification limits are in [VIDEO_RECOVERY_VALIDATION.md](VIDEO_RECOVERY_VALIDATION.md).
 
 ## Operations and limitations
 

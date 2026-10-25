@@ -17,6 +17,10 @@
 .results-source { font-size:10px; color:var(--muted); margin-top:6px; overflow-wrap:anywhere; }
 
 .preview-limits { font-size:8px; color:var(--muted); line-height:1.6; padding:0 15px; }
+.video-scan-help { display:flex; align-items:flex-start; gap:8px; color:var(--muted); font-size:11px; line-height:1.7; margin-top:14px; }
+.video-scan-help>svg { flex:none; margin-top:2px; }
+.video-preview-note { display:flex; flex-direction:column; align-items:center; align-self:flex-start; gap:10px; text-align:center; padding:14px 12px; color:var(--muted); font-size:10px; line-height:1.7; }
+.video-preview-note strong { color:var(--text); font-size:11px; font-weight:600; }
 .cancel-detail { color:var(--warning); font-size:10px; line-height:1.7; margin-top:12px; }
 
 .progress-stage { font-size:12px; color:var(--text); margin:0 0 13px 27px; line-height:1.65; }

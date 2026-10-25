@@ -6,6 +6,7 @@ mod fat;
 mod partition;
 mod progress;
 mod reader;
+mod video;
 pub use reader::SourceReader;
 
 use serde::{Deserialize, Serialize};
@@ -274,6 +275,14 @@ pub fn scan_with_size(
     }
     entries.retain(|e| e.offset >= start && e.offset.checked_add(e.size).is_some_and(|n| n <= end));
     if options.mode != "quick" {
+        if options.types.is_empty()
+            || options
+                .types
+                .iter()
+                .any(|t| t.eq_ignore_ascii_case("mp4") || t.eq_ignore_ascii_case("mov"))
+        {
+            method_notes.push(video::METHOD_NOTE.into());
+        }
         let base_count = entries.len();
         reporter
             .borrow_mut()
@@ -442,5 +451,7 @@ pub fn recover_entry_with_progress_and_size(
 
 /// Formats with implemented structural boundary handlers (not an extension count).
 pub fn supported_carving_types() -> &'static [&'static str] {
-    &["jpg", "png", "pdf", "gif", "zip", "bmp", "wav"]
+    &[
+        "jpg", "png", "pdf", "gif", "zip", "bmp", "wav", "mp4", "mov",
+    ]
 }

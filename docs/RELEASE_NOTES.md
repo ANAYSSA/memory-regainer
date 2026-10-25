@@ -1,25 +1,29 @@
-# Memory Regainer v0.1.2
+# Memory Regainer v0.1.3
 
-This update clarifies Quick Scan results and byte units, preserves valid FAT results when an independent record is damaged, and records a deeper static analysis of Recoverit. It does **not** add Recoverit-equivalent SD-card or fragmented-video recovery.
+Deep and Advanced scans now find and recover **MP4 and MOV video files** from readable images or devices when their original content remains contiguous and the required container metadata is intact.
+
+## Recover a video
+
+1. Select your USB drive or a raw image of it.
+2. Use **Deep Scan**, now the initial mode. Leave all format boxes unchecked to search every supported type, or select **MP4** and **MOV**.
+3. Let the scan finish, select the results, and recover them to separate healthy storage.
+4. Open recovered videos in a local player and check their contents. A copy hash confirms the copied bytes, not the original video's completeness.
+
+Quick Scan still checks supported FAT/exFAT deleted records; it does not perform a full video-content search.
 
 ## Changes
 
-- Sizes now use decimal **KB, MB, GB and TB** (1 GB = 1,000,000,000 bytes). Stored byte offsets and recovered content are unchanged. A capacity previously shown as about 115 GiB will therefore appear as about 124 GB.
-- A completed operation taking less than one second displays **Less than 1 s**, rather than 00:00. Completed Quick Scan explicitly says that it searched filesystem metadata, not the entire source for file signatures.
-- Detected partitions and general FAT/exFAT method limitations appear in a neutral information section. Actual skipped-data or damaged-structure warnings remain warnings; read failures remain errors.
-- FAT32 root-cluster values outside the valid data-cluster range are rejected and reported. A damaged FAT record or directory-chain link no longer discards already found independent candidates. Read errors and cancellation still stop the scan.
-- The English research report now includes verified installer identity and selected instruction-level scan, SD-card profile and video-processing call paths from the supplied Windows binaries and an official signed macOS payload. No proprietary binary, source code or asset is bundled.
+- An independent MP4/MOV parser checks finite container boundaries, video tracks, local data references, sample counts/sizes, sample-to-chunk mappings and media chunk ranges. Movie metadata may be before or after media data. The parser supports 64-bit atom sizes and chunk offsets; the ZIP/WAV 1 GiB limit does not apply to video.
+- MP4/MOV format filters, video result icons and bilingual recovery guidance are included. Preview stays bounded; video files can be checked in a local player after recovery.
+- Sizes use **MB/GB** with decimal conversion. Subsecond operations show **Less than 1 s**, and general method information is separate from actual scan warnings.
+- Administrator access on Windows, progress/elapsed time and protection against automatic idle system sleep are retained.
 
-## Validation
+## Video scope and validation
 
-Local checks passed 56 Rust tests (49 core and 7 desktop) and 38 frontend tests: **94 total**. The release workflow runs tests and builds Windows x64 EXE, macOS Apple Silicon DMG and macOS Intel DMG. Final native outcomes and downloaded-asset checks are recorded after publication in [validation](https://github.com/ANAYSSA/memory-regainer/blob/main/docs/VALIDATION.md).
+This release supports classic, self-contained MP4/MOV files. It does **not** reconstruct arbitrarily scattered fragments, rebuild missing movie metadata, repair overwritten video, decrypt tracks, or recover fragmented-MP4 (`moof`/`mvex`) layouts. Legacy MOV without `ftyp` and unbounded size-zero media-data atoms are unsupported. The app checks structure; it does not decode every recovered frame. These limits remain visible in scan and per-file notes.
 
-## Scope
+Tests use small, real synthetic H.264/HEVC videos with AAC or PCM audio, including head/tail movie metadata and extended-size/64-bit-offset variants. They compare recovered bytes with known originals and exercise malformed tables, selected ranges and cancellation. Exact local decoding evidence, executed test counts and platform outcomes are recorded in [video validation](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.3/docs/VIDEO_RECOVERY_VALIDATION.md) and [release validation](https://github.com/ANAYSSA/memory-regainer/blob/main/docs/VALIDATION.md). This is not a real damaged-USB or recovery-rate benchmark.
 
-A Quick Scan reading only a small amount of metadata is not evidence that the entire device has been searched, nor a claim that every recoverable file was found. The two messages reported in v0.1.1—FAT method assumptions and a FAT32 partition description—were informational, not a device failure.
+The release provides Windows x64 EXE, Apple Silicon DMG, Intel DMG, matching source, notices and SHA-256 checksums. Windows installers are unsigned; macOS builds are not Developer ID signed or notarized. Recovery works offline; installing missing WebView2 may need internet. Idle protection cannot override manual sleep, lid closure, shutdown or power loss.
 
-Content carving remains limited to JPEG, PNG, PDF, GIF, ZIP, BMP and WAV. MP4/MOV/MXF/MTS content recovery and video-fragment reconstruction are **not implemented**. A supported FAT/exFAT deleted record can identify another file type, but this does not establish playable-video recovery. The research is a bounded reverse analysis, not a complete reconstruction of all Recoverit algorithms or proof of matching recovery results. [Read the detailed findings](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.2/docs/RECOVERIT_ARCHITECTURE_REVIEW.md).
-
-Windows continues to request administrator permission at launch. Idle system sleep protection remains active during scans, recovery and imaging; it cannot override manual sleep, lid closure, shutdown or power loss. Installers remain unsigned on Windows and without Apple Developer ID signing or notarization on macOS. Recovery works offline; installing missing WebView2 may require internet.
-
-The release includes matching source, license notices and SHA-256 checksums. GPL-3.0-or-later. See the [feature matrix](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.2/docs/FEATURES.md) for exact supported recovery cases.
+Memory Regainer is independent software under GPL-3.0-or-later. No Recoverit code or binaries are included. See the [feature matrix](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.3/docs/FEATURES.md) and the [bounded Recoverit research report](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.3/docs/RECOVERIT_ARCHITECTURE_REVIEW.md).

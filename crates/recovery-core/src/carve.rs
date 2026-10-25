@@ -1,5 +1,5 @@
 use crate::{
-    check_cancel, le16, le32, partition::crc32_update, Entry, Error, Extent, Result, Source,
+    check_cancel, le16, le32, partition::crc32_update, video, Entry, Error, Extent, Result, Source,
 };
 use std::sync::atomic::AtomicBool;
 
@@ -32,6 +32,10 @@ pub(crate) fn scan(
     let mut found = Vec::new();
     let mut offset = start;
     let mut skip_until = start;
+    let video_enabled = types.is_empty()
+        || types
+            .iter()
+            .any(|t| t.eq_ignore_ascii_case("mp4") || t.eq_ignore_ascii_case("mov"));
     while offset < end {
         check_cancel(cancel)?;
         let len = (end - offset).min((CHUNK + 16) as u64) as usize;
@@ -62,6 +66,15 @@ pub(crate) fn scan(
                 "bmp"
             } else if b.len() >= 12 && &b[..4] == b"RIFF" && &b[8..12] == b"WAVE" {
                 "wav"
+            } else if video_enabled && b.len() >= 8 && &b[4..8] == b"ftyp" {
+                match video::classify(source, absolute, end, cancel) {
+                    Ok(kind) => kind,
+                    Err(Error::Invalid(_)) => {
+                        i += 1;
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                }
             } else {
                 i += 1;
                 continue;
@@ -70,19 +83,29 @@ pub(crate) fn scan(
                 i += 1;
                 continue;
             }
-            let validated = match kind {
-                "png" => png(source, absolute, end, cancel),
-                "jpg" => jpeg(source, absolute, end, cancel),
-                "pdf" => pdf(source, absolute, end, cancel),
-                "gif" => gif(source, absolute, end, cancel),
-                "zip" => zip(source, absolute, end, cancel),
-                "bmp" => bmp(source, absolute, end),
-                "wav" => wav(source, absolute, end, cancel),
-                _ => unreachable!(),
+            let validated = if matches!(kind, "mp4" | "mov") {
+                video::probe(source, absolute, end, cancel).and_then(|candidate| {
+                    if candidate.kind != kind {
+                        return Err(invalid("Video brand changed during scan"));
+                    }
+                    Ok((candidate.size, candidate.evidence))
+                })
+            } else {
+                match kind {
+                    "png" => png(source, absolute, end, cancel),
+                    "jpg" => jpeg(source, absolute, end, cancel),
+                    "pdf" => pdf(source, absolute, end, cancel),
+                    "gif" => gif(source, absolute, end, cancel),
+                    "zip" => zip(source, absolute, end, cancel),
+                    "bmp" => bmp(source, absolute, end),
+                    "wav" => wav(source, absolute, end, cancel),
+                    _ => unreachable!(),
+                }
+                .map(|(size, evidence)| (size, evidence.to_string()))
             };
             match validated {
                 Ok((size, evidence)) => {
-                    found.push(Entry { id:format!("carve-{absolute:x}-{size:x}"),name:format!("recovered_{absolute:016x}.{kind}"),kind:kind.into(),size,offset:absolute,confidence:"medium".into(),method:"signature-carving".into(),notes:vec![evidence.into(),"Contiguous signature recovery; original name, deletion status and folder are unknown. Recognisable structure does not guarantee intact content.".into()],extents:vec![Extent {offset:absolute,length:size}] });
+                    found.push(Entry { id:format!("carve-{absolute:x}-{size:x}"),name:format!("recovered_{absolute:016x}.{kind}"),kind:kind.into(),size,offset:absolute,confidence:"medium".into(),method:"signature-carving".into(),notes:vec![evidence,"Contiguous signature recovery; original name, deletion status and folder are unknown. Recognisable structure does not guarantee intact content.".into()],extents:vec![Extent {offset:absolute,length:size}] });
                     skip_until = absolute + size;
                 }
                 Err(Error::Invalid(_)) => {}

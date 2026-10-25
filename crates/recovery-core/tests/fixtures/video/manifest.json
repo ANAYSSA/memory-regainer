@@ -1,0 +1,419 @@
+{
+  "schema_version": 1,
+  "fixture_origin": "Original lavfi test pattern and sine tone; GPL-3.0-or-later",
+  "ffmpeg_version": "ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers",
+  "ffprobe_version": "ffprobe version 9.0.2 Copyright (c) 2007-2026 the FFmpeg developers",
+  "generation_commands": [
+    [
+      "ffmpeg",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-nostdin",
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=64x48:rate=5:duration=0.6",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=440:sample_rate=8000:duration=0.6",
+      "-map",
+      "0:v:0",
+      "-map",
+      "1:a:0",
+      "-c:v",
+      "libx264",
+      "-threads",
+      "1",
+      "-preset",
+      "veryslow",
+      "-crf",
+      "28",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "aac",
+      "-fflags",
+      "+bitexact",
+      "-flags:v",
+      "+bitexact",
+      "-flags:a",
+      "+bitexact",
+      "-map_metadata",
+      "-1",
+      "-metadata",
+      "creation_time=2026-01-01T00:00:00Z",
+      "original-tail.mp4"
+    ],
+    [
+      "ffmpeg",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-nostdin",
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=64x48:rate=5:duration=0.6",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=440:sample_rate=8000:duration=0.6",
+      "-map",
+      "0:v:0",
+      "-map",
+      "1:a:0",
+      "-c:v",
+      "libx264",
+      "-threads",
+      "1",
+      "-preset",
+      "veryslow",
+      "-crf",
+      "28",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "aac",
+      "-fflags",
+      "+bitexact",
+      "-flags:v",
+      "+bitexact",
+      "-flags:a",
+      "+bitexact",
+      "-map_metadata",
+      "-1",
+      "-metadata",
+      "creation_time=2026-01-01T00:00:00Z",
+      "-movflags",
+      "+faststart",
+      "original-faststart.mp4"
+    ],
+    [
+      "ffmpeg",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-nostdin",
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=64x48:rate=5:duration=0.6",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=440:sample_rate=8000:duration=0.6",
+      "-map",
+      "0:v:0",
+      "-map",
+      "1:a:0",
+      "-c:v",
+      "libx264",
+      "-threads",
+      "1",
+      "-preset",
+      "veryslow",
+      "-crf",
+      "28",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "pcm_s16le",
+      "-fflags",
+      "+bitexact",
+      "-flags:v",
+      "+bitexact",
+      "-flags:a",
+      "+bitexact",
+      "-map_metadata",
+      "-1",
+      "-metadata",
+      "creation_time=2026-01-01T00:00:00Z",
+      "original-tail.mov"
+    ],
+    [
+      "ffmpeg",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-nostdin",
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=64x48:rate=5:duration=0.6",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=440:sample_rate=8000:duration=0.6",
+      "-map",
+      "0:v:0",
+      "-map",
+      "1:a:0",
+      "-c:v",
+      "libx264",
+      "-threads",
+      "1",
+      "-preset",
+      "veryslow",
+      "-crf",
+      "28",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "pcm_s16le",
+      "-fflags",
+      "+bitexact",
+      "-flags:v",
+      "+bitexact",
+      "-flags:a",
+      "+bitexact",
+      "-map_metadata",
+      "-1",
+      "-metadata",
+      "creation_time=2026-01-01T00:00:00Z",
+      "-movflags",
+      "+faststart",
+      "original-faststart.mov"
+    ],
+    [
+      "ffmpeg",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-nostdin",
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=64x48:rate=5:duration=0.6",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=440:sample_rate=8000:duration=0.6",
+      "-map",
+      "0:v:0",
+      "-map",
+      "1:a:0",
+      "-c:v",
+      "libx265",
+      "-threads",
+      "1",
+      "-x265-params",
+      "pools=1:frame-threads=1:log-level=error",
+      "-preset",
+      "fast",
+      "-crf",
+      "28",
+      "-tag:v",
+      "hvc1",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "aac",
+      "-fflags",
+      "+bitexact",
+      "-flags:v",
+      "+bitexact",
+      "-flags:a",
+      "+bitexact",
+      "-map_metadata",
+      "-1",
+      "-metadata",
+      "creation_time=2026-01-01T00:00:00Z",
+      "original-hevc.mp4"
+    ]
+  ],
+  "co64_transform": "widen_offsets in this script; mdat header extended by 8 bytes; chunk offsets increased by 8; tail moov ancestors resized",
+  "decode_command": [
+    "ffmpeg",
+    "-hide_banner",
+    "-v",
+    "error",
+    "-xerror",
+    "-err_detect",
+    "explode",
+    "-nostdin",
+    "-i",
+    "FILE",
+    "-map",
+    "0",
+    "-f",
+    "null",
+    "-"
+  ],
+  "files": [
+    {
+      "file": "original-co64-extended.mp4",
+      "bytes": 5903,
+      "sha256": "f3a419e26d9036be9089e7f9043e0bb908c898951ca986d204df749ea50fd217",
+      "ffprobe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video",
+            "width": 64,
+            "height": 48,
+            "nb_read_frames": "3"
+          },
+          {
+            "codec_name": "aac",
+            "codec_type": "audio",
+            "nb_read_frames": "5"
+          }
+        ],
+        "format": {
+          "duration": "0.600000",
+          "size": "5903"
+        }
+      },
+      "full_decode_exit_code": 0
+    },
+    {
+      "file": "original-faststart.mov",
+      "bytes": 12475,
+      "sha256": "ca118ab70af775dc60be1fd2104d84d1c8262bb5810d67db656416f165512fc3",
+      "ffprobe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video",
+            "width": 64,
+            "height": 48,
+            "nb_read_frames": "3"
+          },
+          {
+            "codec_name": "pcm_s16le",
+            "codec_type": "audio",
+            "nb_read_frames": "5"
+          }
+        ],
+        "format": {
+          "duration": "0.600000",
+          "size": "12475"
+        }
+      },
+      "full_decode_exit_code": 0
+    },
+    {
+      "file": "original-faststart.mp4",
+      "bytes": 5879,
+      "sha256": "72656b01a517ac7ad255451fd1e832a0d91b0a9f66792992cd9c8faba8e7287d",
+      "ffprobe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video",
+            "width": 64,
+            "height": 48,
+            "nb_read_frames": "3"
+          },
+          {
+            "codec_name": "aac",
+            "codec_type": "audio",
+            "nb_read_frames": "5"
+          }
+        ],
+        "format": {
+          "duration": "0.600000",
+          "size": "5879"
+        }
+      },
+      "full_decode_exit_code": 0
+    },
+    {
+      "file": "original-hevc.mp4",
+      "bytes": 7700,
+      "sha256": "d1887b2d93fa999e95f4b6d6f00c690edaffa2527ea9903d18344d53a490045b",
+      "ffprobe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "hevc",
+            "codec_type": "video",
+            "width": 64,
+            "height": 48,
+            "nb_read_frames": "3"
+          },
+          {
+            "codec_name": "aac",
+            "codec_type": "audio",
+            "nb_read_frames": "5"
+          }
+        ],
+        "format": {
+          "duration": "0.600000",
+          "size": "7700"
+        }
+      },
+      "full_decode_exit_code": 0
+    },
+    {
+      "file": "original-tail.mov",
+      "bytes": 12475,
+      "sha256": "28eac411f65d05fd13e02408961ddfdc04e9afc939d18fce3cb07d0ff15fc48c",
+      "ffprobe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video",
+            "width": 64,
+            "height": 48,
+            "nb_read_frames": "3"
+          },
+          {
+            "codec_name": "pcm_s16le",
+            "codec_type": "audio",
+            "nb_read_frames": "5"
+          }
+        ],
+        "format": {
+          "duration": "0.600000",
+          "size": "12475"
+        }
+      },
+      "full_decode_exit_code": 0
+    },
+    {
+      "file": "original-tail.mp4",
+      "bytes": 5879,
+      "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+      "ffprobe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video",
+            "width": 64,
+            "height": 48,
+            "nb_read_frames": "3"
+          },
+          {
+            "codec_name": "aac",
+            "codec_type": "audio",
+            "nb_read_frames": "5"
+          }
+        ],
+        "format": {
+          "duration": "0.600000",
+          "size": "5879"
+        }
+      },
+      "full_decode_exit_code": 0
+    }
+  ]
+}
