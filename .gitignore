@@ -10,3 +10,7 @@
 .env*
 !*.example
 /work/
+
+__pycache__/
+*.py[cod]
+/release-artifacts/
