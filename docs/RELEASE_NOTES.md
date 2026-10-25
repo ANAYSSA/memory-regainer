@@ -1,6 +1,6 @@
 # Memory Regainer v0.1.1
 
-v0.1.1 focuses on Windows raw-device access, visible progress and protection from automatic idle sleep during recovery work. It follows a report of a USB scan appearing stalled and returning OS error 1 after sleep. That device failure has not been reproduced; this release does not claim to establish its exact cause.
+v0.1.1 focuses on Windows raw-device access, visible progress and protection from automatic idle sleep during recovery work. It follows a report of a USB scan appearing stalled and returning OS error 1 after sleep. The old regular-file metadata call reproduced `Incorrect function. (os error 1)` on a read-only Windows scratch disk; the replacement reader passed on the same disk. The original physical USB/sleep sequence has not been reproduced.
 
 ## Changes
 
@@ -13,7 +13,7 @@ v0.1.1 focuses on Windows raw-device access, visible progress and protection fro
 
 ## Validation status
 
-The latest local run passed 51 Rust and 38 frontend tests (89 total); strict workspace Clippy passed. A native macOS read-only disposable device probe passed, and a separate power probe confirmed that the idle-sleep assertion appeared while active and disappeared on completion. Post-review formatting, Clippy and Rust tests passed; native installer builds remain pending; exact results belong in [VALIDATION.md](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.1/docs/VALIDATION.md). Real Windows USB sleep/wake, disconnect/reconnect and damaged-device qualification remain outstanding.
+The latest local run passed 51 Rust and 38 frontend tests (89 total); strict workspace Clippy passed. A native macOS read-only disposable device probe passed, and a separate power probe confirmed that the idle-sleep assertion appeared while active and disappeared on completion. Post-review formatting, Clippy and Rust tests passed. [Native preflight builds](https://github.com/ANAYSSA/memory-regainer/actions/runs/40207498239) passed on Windows x64 and both macOS architectures; Windows additionally passed a read-only 32 MiB VHD probe and embedded UAC-manifest verification. Exact results belong in [VALIDATION.md](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.1/docs/VALIDATION.md). Real Windows USB sleep/wake, disconnect/reconnect and damaged-device qualification remain outstanding.
 
 Cancellation is cooperative; a blocked OS read may delay stopping. There is no resumable scan checkpoint or automatic recovery after a device disappears. An elapsed timer shows that the UI is responsive, not that the disk is delivering new bytes.
 
@@ -21,7 +21,7 @@ Cancellation is cooperative; a blocked OS read may delay stopping. There is no r
 
 The recovery scope remains image-based recovery, FAT metadata undelete, narrow exFAT metadata undelete and seven bounded carvers: JPEG, PNG, PDF, GIF, ZIP, BMP and WAV. exFAT requires clean single-FAT revision 1.00 volumes and intact fully initialized contiguous deleted streams with currently free clusters. NTFS/APFS/ext4 metadata recovery, generic fragmented-file reconstruction and MP4/MOV carving are not implemented. See the [feature matrix](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.1/docs/FEATURES.md).
 
-Native packages target Windows x64 EXE, macOS Apple Silicon DMG and macOS Intel DMG. Windows WebView2 installation may require internet if the runtime is absent; recovery works offline. Installers are unsigned on Windows and are not Apple Developer ID signed or notarized. Release assets include matching source and SHA-256 checksums when publication succeeds.
+Native packages target Windows x64 EXE, macOS Apple Silicon DMG and macOS Intel DMG. Windows WebView2 installation may require internet if the runtime is absent; recovery works offline. Installers are unsigned on Windows and are not Apple Developer ID signed or notarized. Release assets include matching source and SHA-256 checksums.
 
 Use a separate healthy destination and prefer a disk image. Overwritten bytes, TRIM and inaccessible encrypted data cannot be recovered by this application.
 

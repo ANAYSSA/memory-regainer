@@ -16,17 +16,17 @@ Task-owned v0.1.0 temporary images, verification downloads, build outputs and te
 
 ## Current work: v0.1.1
 
-A Windows USB scan was reported as apparently stalled, followed by sleep and OS error 1. Its exact failing operation and hardware behavior have not been reproduced. The current work addresses concrete reader, responsiveness, progress and sleep-management weaknesses without claiming that this report proves their causal connection.
+A Windows USB scan was reported as apparently stalled, followed by sleep and OS error 1. The old regular-file metadata call reproduced OS error 1 on a read-only Windows scratch VHD, and the new reader passed on the same device. The exact physical USB/sleep sequence has not been reproduced. The current work addresses concrete reader, responsiveness, progress and sleep-management weaknesses without claiming that this report proves their causal connection.
 
 - [x] Move source opening/fingerprinting and destination preparation into background jobs so the UI can report their stage immediately.
 - [x] Preserve original device errors with operation context instead of reducing them to a generic permissions message.
 - [x] Add Windows `requireAdministrator` application manifest using standard UAC approval.
 - [x] Add operation-scoped idle sleep requests on Windows/macOS with status reporting and release on job exit.
 - [x] Add stage, elapsed-time and determinate/indeterminate progress fields; implement stage-aware frontend rate/ETA handling.
-- [ ] Complete shared raw-device reader geometry/alignment/cache changes and focused core tests.
-- [x] Translate project-owned documentation into English and prepare English v0.1.0 release text. Preserve third-party notices verbatim and immutable historical source tags.
+- [x] Complete shared raw-device reader geometry/alignment/cache changes and focused core tests.
+- [x] Translate project-owned documentation into English and publish the English v0.1.0 release description. Preserve third-party notices verbatim and immutable historical source tags.
 - [x] Extend static Recoverit import research and inspect primary PhotoRec/TestDisk source, GNU ddrescue documentation and Microsoft API contracts. No proprietary code or binaries added; see [RECOVERY_IO_RESEARCH.md](docs/RECOVERY_IO_RESEARCH.md).
-- [ ] Run final integrated Rust/frontend checks, native builds and relevant power/assertion tests; record actual results in [VALIDATION.md](docs/VALIDATION.md).
+- [x] Run final integrated Rust/frontend checks (89 tests), three native installer preflight builds, Windows VHD/manifest checks and macOS raw/power probes; record actual results in [VALIDATION.md](docs/VALIDATION.md).
 - [ ] Publish v0.1.1 Windows/macOS installers with matching source/checksums and verify uploaded assets.
 
 The checked boxes above indicate implementation or documentation work, not Windows USB hardware qualification. The release's exact executed validation is recorded separately.

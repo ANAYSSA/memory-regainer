@@ -1,7 +1,7 @@
 {
   "recorded_on": "2026-10-25",
   "version": "0.1.1",
-  "scope": "Native macOS probes during development; not Windows USB or damaged-media qualification",
+  "scope": "Native disposable macOS and Windows raw-device probes; not physical USB or damaged-media qualification",
   "raw_reader": {
     "platform": "macOS arm64",
     "source": "new disposable 8 MiB all-zero raw image, attached readonly and nomount",
@@ -38,5 +38,50 @@
     "assertion": [
       "pid 1148(probe): [0x0003d47b0001913f] 00:00:00 PreventUserIdleSystemSleep named: \"Memory Regainer active disk operation\""
     ]
+  },
+  "windows_raw_reader": {
+    "platform": "Windows x64 GitHub-hosted runner",
+    "source": "new disposable 32 MiB fixed VHD attached read-only",
+    "run": "https://github.com/ANAYSSA/memory-regainer/actions/runs/40207498239",
+    "job_id": 121211475084,
+    "probe": {
+      "legacy_file_metadata_diagnostic": {
+        "message": "Incorrect function. (os error 1)",
+        "ok": false,
+        "os_error": 1
+      },
+      "raw_device_verified": true,
+      "scan_results": [
+        {
+          "actual_read_bytes": 131072,
+          "files_found": 0,
+          "mode": "quick",
+          "stages": [
+            "opening-source",
+            "partitions",
+            "metadata",
+            "finished"
+          ]
+        },
+        {
+          "actual_read_bytes": 33554432,
+          "files_found": 0,
+          "mode": "deep",
+          "stages": [
+            "opening-source",
+            "partitions",
+            "metadata",
+            "carving",
+            "finished"
+          ]
+        }
+      ],
+      "size": 33554432,
+      "transfer_sector_size": 512,
+      "unaligned_range_bytes_read": 196608,
+      "unaligned_range_read_operations": 3
+    },
+    "scratch_detached_and_cleaned": true,
+    "embedded_manifest": "requireAdministrator; uiAccess=false; extracted from built application with Windows SDK mt.exe"
   }
 }
