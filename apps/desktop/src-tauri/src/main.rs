@@ -3,7 +3,7 @@ mod platform;
 mod power;
 
 use base64::Engine;
-use recovery_core::{Entry, Progress, ScanOptions};
+use recovery_core::{Entry, Partition, Progress, ScanOptions};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -71,6 +71,9 @@ struct JobStatus {
     sleep_inhibition_error: Option<String>,
     entries: Vec<Entry>,
     warnings: Vec<String>,
+    partitions: Vec<Partition>,
+    #[serde(rename = "methodNotes")]
+    method_notes: Vec<String>,
     error: Option<String>,
     report: Option<RecoveryReport>,
 }
@@ -278,6 +281,8 @@ fn begin(
                     sleep_inhibition_error: None,
                     entries: Vec::new(),
                     warnings: Vec::new(),
+                    partitions: Vec::new(),
+                    method_notes: Vec::new(),
                     error: None,
                     report: None,
                 },
@@ -421,12 +426,8 @@ fn scan_start(state: AppState, source_id: String, mut options: ScanOptions) -> A
         let job = jobs.get_mut(key).ok_or("Job lost")?;
         job.view.entries = result.entries;
         job.view.warnings = result.warnings;
-        job.view.warnings.extend(result.partitions.iter().map(|p| {
-            format!(
-                "{}: {} · offset {} · {} bytes",
-                p.name, p.filesystem, p.offset, p.size
-            )
-        }));
+        job.view.partitions = result.partitions;
+        job.view.method_notes = result.method_notes;
         job.view.progress.scanned = result.bytes_scanned;
         job.view.progress.found = job.view.entries.len();
         Ok(())

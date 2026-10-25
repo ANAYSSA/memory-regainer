@@ -197,6 +197,9 @@ fn deleted_pdf_exfat_unicode_name_exact_sha256_and_source_unchanged() {
     let (f, r) = quick(&bytes);
     assert_eq!(r.partitions[0].filesystem, "exFAT");
     assert_eq!(r.entries.len(), 1, "{:?}", r.warnings);
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    assert_eq!(r.method_notes.len(), 1);
+    assert!(r.method_notes[0].contains("single-FAT revision 1.00"));
     let e = &r.entries[0];
     assert_eq!(e.name, "Удалённый документ.pdf");
     assert_eq!(e.kind, "pdf");

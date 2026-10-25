@@ -1,0 +1,683 @@
+{
+  "schema_version": 1,
+  "analysis_date": "2026-10-25",
+  "scope": "Bounded static analysis; no proprietary execution, source reconstruction or runtime recovery validation. Names are abbreviated for readability. Conditional call sites are not claims that every path runs.",
+  "address_convention": {
+    "macos": "Preferred Mach-O virtual addresses within the specified module; not file offsets or ASLR runtime addresses.",
+    "windows": "Preferred PE virtual addresses unless explicitly called RVA; scanopreator.dll image base 0x180000000."
+  },
+  "bootstrap": {
+    "source_dmg": "Wondershare_Recoverit_Installer.dmg",
+    "source_sha256": "954ca5c7202ff234ce71617a6535996c26ac1156831ca0f6581e08af043e9b6b",
+    "bootstrap_executable_sha256": "25677116997bfa0874b272983380b576366be75238dfef3f1686e1a376752283",
+    "bootstrap_executable_bytes": 1870704,
+    "bundle": {
+      "CFBundleIdentifier": "com.wondershare.Installer",
+      "CFBundleShortVersionString": "3.9.9",
+      "CFBundleExecutable": "Product Installer",
+      "InstallApplicationID": "com.wondershare.recoveritloader",
+      "InstallApplicationName": "Recoverit for Mac",
+      "DownloadApplicationPackageURL": "https://download.wondershare.net/cbs_down/recoverit_full4177.zip",
+      "SpareDownloadPackageURL": "https://download.wondershare.net/cbs_down/recoverit_arm_full4177.zip"
+    },
+    "architectures": [
+      "x86_64",
+      "arm64"
+    ],
+    "signature": {
+      "strict_deep_verification_exit_code": 0,
+      "team_id": "YZC2T44ZDX",
+      "authority": "Developer ID Application: Wondershare Technology Group Co.,LTD",
+      "stapled_ticket_observed": true
+    },
+    "detached": true
+  },
+  "official_arm_payload": {
+    "url": "https://download.wondershare.net/cbs_down/recoverit_arm_full4177.zip",
+    "archive_bytes": 193216640,
+    "archive_sha256": "e4113992e546f26190e7c55fc6740f2913748e804d0ad9ec0c0009e30c88aa1d",
+    "outer_bundle": "com.wondershare.recoveritloader",
+    "outer_version": "15.0.1.3",
+    "inner_bundle": "com.wondershare.recoverit",
+    "inner_version": "15.0.1",
+    "architecture": "arm64",
+    "strict_deep_codesign_verification_exit_code": 0,
+    "team_id": "YZC2T44ZDX",
+    "stapled_notarization_ticket_observed": true,
+    "online_revocation_assessment_performed": false,
+    "modules": [
+      {
+        "file": "Recoverit",
+        "bytes": 12035920,
+        "sha256": "f30c879a46edab132c2ebd6b81de08c4ece0d3714e0e214a4614745a79a7f7b7"
+      },
+      {
+        "file": "libscanopreator.dylib",
+        "bytes": 10963680,
+        "sha256": "ffc7ece169d9c3cafd675dffe1a0a5c5ecc5313d183e8a7448cf2be7fedb1d11"
+      },
+      {
+        "file": "libdrcore.dylib",
+        "bytes": 1892528,
+        "sha256": "42991dcd706dda798b04c371bd19668a873fb19d3f9ee423e0461ce89086ca25"
+      },
+      {
+        "file": "libdatarecovery.dylib",
+        "bytes": 1047440,
+        "sha256": "b44da151d08122deff1d778016d7ce3a9adfb5056098655ebe5fd57ff2908570"
+      },
+      {
+        "file": "librepaircore.dylib",
+        "bytes": 14658544,
+        "sha256": "8f8fc7c550ba88fbffcd8fb99ca37d7fcbcaa65b9f96866ae9aea57f9f5a8a62"
+      },
+      {
+        "file": "WsVideoRepairLib.dylib",
+        "bytes": 13196480,
+        "sha256": "81d1206825945a411e71bd03a9f36417596ba568429d877b19a57f55a097a906"
+      }
+    ]
+  },
+  "macos_instruction_review": {
+    "functions_selected": 41,
+    "method": "nm symbol boundaries plus otool ARM64 instruction inspection and demangled direct branch targets. Indirect virtual calls not resolved exhaustively.",
+    "call_edges": [
+      {
+        "module": "libdrcore.dylib",
+        "function": "CScanManager::Scan",
+        "address": "0x3f88c",
+        "observed_direct_callees": [
+          "ProcessController::start",
+          "CScanManager::ScanTimeMachine",
+          "CScanManager::ScanICloud",
+          "CScanManager::ScanEncryptionChip",
+          "CScanManager::ConfigScanType",
+          "CScanManager::ConfigScanPloy"
+        ]
+      },
+      {
+        "module": "libdrcore.dylib",
+        "function": "CScanManager::ScanNormalChip",
+        "address": "0x419d0",
+        "observed_direct_callees": [
+          "CScanManager::ConfigScanType",
+          "CScanManager::ConfigScanPloy"
+        ]
+      },
+      {
+        "module": "libdrcore.dylib",
+        "function": "CScanManager::ConfigScanPloy",
+        "address": "0x429c0",
+        "observed_direct_callees": [
+          "CScanManager::CreateScanContext",
+          "CScanManager::ConfigQuickScanPloy",
+          "ProcessController::interrupt",
+          "CTaskManager::reset",
+          "CTaskManager::SetDataWriter",
+          "CTaskManager::SetDataRepository",
+          "CTaskManager::SetDataPersistence",
+          "CTaskManager::SetBlockUnitSize",
+          "CTaskManager::SetSectorSize",
+          "CScanManager::ConfigConstomizedAdvanceScanType",
+          "CScanManager::ConfigLargeDeviceFastScanPloy",
+          "CScanManager::ConfigAdvancedDeepScanPloy",
+          "CScanManager::ConfigNormalDeepScanPloy"
+        ]
+      },
+      {
+        "module": "libdrcore.dylib",
+        "function": "CScanManager::ConfigQuickScanPloy",
+        "address": "0x432dc",
+        "observed_direct_callees": [
+          "CScanManager::createAndSetScanOperator",
+          "CScanManager::SetScanOperatorDataInterface",
+          "CScanManager::IsSDCard",
+          "CScanManager::IsUSBDrive",
+          "CTaskManager::SetFSBitmap",
+          "CTaskManager::EnableFSBitmap"
+        ]
+      },
+      {
+        "module": "libdrcore.dylib",
+        "function": "CScanManager::ConfigNormalDeepScanPloy",
+        "address": "0x43d68",
+        "observed_direct_callees": [
+          "CScanManager::ConfigFormatScanPloy",
+          "CScanManager::ConfigRawScanPloy",
+          "CScanManager::ConfigMultySystemScanPloy",
+          "CTaskManager::Start",
+          "CTaskManager::JoinTask",
+          "CScanManager::OnDeepScanFinish"
+        ]
+      },
+      {
+        "module": "libdrcore.dylib",
+        "function": "CScanManager::ConfigAdvancedDeepScanPloy",
+        "address": "0x43f78",
+        "observed_direct_callees": [
+          "CScanManager::CreateScanningBitmap",
+          "CScanManager::ConfigFormatScanPloy",
+          "CScanManager::ConfigRawScanPloy",
+          "CScanManager::ConfigMultySystemScanPloy",
+          "CScanManager::ConfigMultiAdvanceScanPloy",
+          "CTaskManager::Start",
+          "CTaskManager::JoinTask",
+          "ProcessController::interrupt",
+          "CTaskManager::reset",
+          "CScanManager::Add2ndAdvancedScanTask",
+          "CTaskManager::SetASBitmap",
+          "CTaskManager::EnableASBitmap",
+          "CTaskManager::EnableContinuousScan",
+          "CTaskManager::AddScanFinishTask",
+          "CScanManager::OnDeepScanFinish"
+        ]
+      },
+      {
+        "module": "libdrcore.dylib",
+        "function": "CScanManager::ConfigRawScanPloy",
+        "address": "0x45b60",
+        "observed_direct_callees": [
+          "CScanManager::SetScanOperatorDataInterface",
+          "CTaskManager::AddTask"
+        ]
+      },
+      {
+        "module": "libdrcore.dylib",
+        "function": "CScanManager::ConfigMultiAdvanceScanPloy",
+        "address": "0x47614",
+        "observed_direct_callees": [
+          "CScanManager::ConfigAdvanceScanPloy"
+        ]
+      },
+      {
+        "module": "libdrcore.dylib",
+        "function": "CScanManager::Add2ndAdvancedScanTask",
+        "address": "0x48d00",
+        "observed_direct_callees": [
+          "CTaskManager::AddTask"
+        ]
+      },
+      {
+        "module": "libdrcore.dylib",
+        "function": "CScanManager::RequestSDCardInfo",
+        "address": "0x4b59c",
+        "observed_direct_callees": [
+          "SDCardDetector::SDCardDetector::detectVendor"
+        ]
+      },
+      {
+        "module": "libdrcore.dylib",
+        "function": "CRecoverTask::runScanning",
+        "address": "0x5b854",
+        "observed_direct_callees": [
+          "ProcessController::interrupt"
+        ]
+      },
+      {
+        "module": "libdrcore.dylib",
+        "function": "SDCardDetector::SDMediaAnalyser::checkFileModel",
+        "address": "0x5d9d8",
+        "observed_direct_callees": [
+          "common::StreamBufferBuilder::StreamBufferBuilder",
+          "common::StreamBufferBuilder::buildWithFile",
+          "common::StreamBufferBuilder::get",
+          "mp4::Mp4UserDataParser::Mp4UserDataParser",
+          "StreamBuffer::getLength",
+          "mp4::Mp4UserDataParser::parseAtoms",
+          "mp4::Mp4UserDataParser::getTagInfo",
+          "mp4::Mp4UserDataParser::~Mp4UserDataParser",
+          "common::StreamBufferBuilder::~StreamBufferBuilder",
+          "SDCardDetector::SDMediaAnalyser::searchExif",
+          "SDCardDetector::SDMediaAnalyser::createExifMemoryStream",
+          "meta::ExifStreamParser::ExifStreamParser",
+          "meta::ExifStreamParser::parseSimeply"
+        ]
+      },
+      {
+        "module": "libdrcore.dylib",
+        "function": "SDCardDetector::SDCardDetector::detectVendor",
+        "address": "0x60fb0",
+        "observed_direct_callees": [
+          "SDCardDetector::SDCardDetector::detectByExifFallback"
+        ]
+      },
+      {
+        "module": "libdrcore.dylib",
+        "function": "SDCardDetector::SDCardDetector::detectByExifFallback",
+        "address": "0x61374",
+        "observed_direct_callees": [
+          "SDCardDetector::SDMediaAnalyser::SDMediaAnalyser",
+          "SDCardDetector::SDMediaAnalyser::findModelInPath",
+          "SDCardDetector::stringToVendor",
+          "SDCardDetector::DetectionResult::DetectionResult"
+        ]
+      },
+      {
+        "module": "libdrcore.dylib",
+        "function": "SDCardDetector::SonyDetector::detect",
+        "address": "0x70d8c",
+        "observed_direct_callees": [
+          "SDCardDetector::SDMediaAnalyser::SDMediaAnalyser",
+          "SDCardDetector::FileSystemUtils::getVolumeLabel",
+          "SDCardDetector::FileSystemUtils::containsIgnoreCase",
+          "SDCardDetector::SonyDetector::resolveModel",
+          "SDCardDetector::stringToVendor",
+          "SDCardDetector::FileSystemUtils::joinPath",
+          "SDCardDetector::FileSystemUtils::findDirectoryWithSuffix",
+          "SDCardDetector::DetectionResult::DetectionResult"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "CFat32DelScanOperator::Scan",
+        "address": "0x9e4c8",
+        "observed_direct_callees": [
+          "CScanOperator::checkHasBasicCondition",
+          "CFat32DelScanOperator::Init",
+          "ProcessController::start",
+          "CFat32DelScanOperator::SearchRootDir"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "mp4::FrameSearch::matchAvcFrame",
+        "address": "0x16ac54",
+        "observed_direct_callees": [
+          "StreamBuffer::reset",
+          "StreamBuffer::advanceBuffer",
+          "media::H264Parser::H264Parser",
+          "StreamBuffer::fillBufferWithLength",
+          "media::H264NALU::H264NALU",
+          "StreamBuffer::get",
+          "StreamBuffer::bytesIntoBuffer",
+          "media::MdatStreamAnalyzer::anlyzeAVCFrame",
+          "media::H264SliceHeader::H264SliceHeader",
+          "media::H264Parser::SetStream",
+          "media::H264Parser::ParseSliceHeaderSimple",
+          "StreamBuffer::offsetInStream",
+          "media::H264Parser::~H264Parser"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "mp4::FrameSearch::matchHevcFrame",
+        "address": "0x16af00",
+        "observed_direct_callees": [
+          "StreamBuffer::reset",
+          "StreamBuffer::advanceBuffer",
+          "StreamBuffer::fillBufferWithLength",
+          "media::H265NALU::H265NALU",
+          "StreamBuffer::get",
+          "StreamBuffer::bytesIntoBuffer",
+          "media::MdatStreamAnalyzer::analyzeHEVCFrame",
+          "StreamBuffer::offsetInStream"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "Mp4FragScanOperator::ParseData",
+        "address": "0x16e8ac",
+        "observed_direct_callees": [
+          "Mp4FragScanOperator::ParseDataSimple",
+          "Mp4FragScanOperator::checkCompletions",
+          "Mp4FragScanOperator::notifyNewCompletions",
+          "Mp4FragScanOperator::searchFragments"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "Mp4FragScanOperator::ParseDataSimple",
+        "address": "0x16e958",
+        "observed_direct_callees": [
+          "mp4::Mp4AtomParser::scanAtoms",
+          "CScanOperator::GetDataPersistence",
+          "Mp4FragScanOperator::parseAtoms",
+          "Mp4FragScanOperator::guessExtNameWithFtypBox",
+          "Mp4FragScanOperator::processMoovAndMdat",
+          "Mp4FragScanOperator::searchFragments",
+          "Mp4FragScanOperator::checkCompletions",
+          "Mp4FragScanOperator::notifyNewCompletions",
+          "Mp4FragScanOperator::init"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "Mp4FragScanOperator::ParseDataAdvanced",
+        "address": "0x16eb84",
+        "observed_direct_callees": [
+          "Mp4FragScanOperator::checkCompletions",
+          "Mp4FragScanOperator::notifyNewCompletions",
+          "Mp4FragScanOperator::searchFragments"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "Mp4FragScanOperator::ScanFinish",
+        "address": "0x16ec14",
+        "observed_direct_callees": [
+          "Mp4FragScanOperator::matchRemainingSegments",
+          "Mp4FragScanOperator::logAllSegments",
+          "Mp4FragScanOperator::logFragmentStatistics",
+          "Mp4FragScanOperator::collectAndUpdateCompleteFileStatistics",
+          "Mp4FragScanOperator::tryResolveSegmentOrigin",
+          "Mp4FragScanOperator::buildFile",
+          "Mp4FragScanOperator::processLastFragment",
+          "Mp4FragScanOperator::buildFixableSegements",
+          "Mp4FragScanOperator::resolvePendingOriginSegments"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "Mp4FragScanOperator::ParseDataSimple",
+        "address": "0x172cd0",
+        "observed_direct_callees": [
+          "CScanOperator::GetDataPersistence",
+          "Mp4FragScanOperator::ParseDataSimple",
+          "Mp4FragScanOperator::init"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "Mp4FragScanOperator::processMoovAndMdat",
+        "address": "0x173a10",
+        "observed_direct_callees": [
+          "Mp4FragScanOperator::processMoovAndHeadlessMdat",
+          "Mp4FragScanOperator::processMoovAndMdatRange"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "Mp4FragScanOperator::analyzeMoov",
+        "address": "0x174680",
+        "observed_direct_callees": [
+          "mp4::AtomList::get_first",
+          "Mp4FragScanOperator::createMp4ff",
+          "_mp4ff_total_tracks",
+          "_mp4ff_get_track_type",
+          "_mp4ff_get_video_atom_type",
+          "media::mp4::AtomTypeToVideoCodec",
+          "_mp4ff_num_samples",
+          "SampleInfo::SampleInfo",
+          "_mp4ff_sample_to_offset",
+          "_mp4ff_audio_frame_size",
+          "_mp4ff_close"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "Mp4FragScanOperator::matchMoovAndMdatSampleRange",
+        "address": "0x1759c0",
+        "observed_direct_callees": [
+          "DataSegment::getVideoTrack",
+          "mp4::AtomList::get_first",
+          "mp4::CombineAtomList",
+          "mp4::AtomList::sort_by_container",
+          "mp4::AtomList::size_before",
+          "StreamBuffer::reset",
+          "mp4::FrameSearch::FrameSearch",
+          "mp4::FrameSearch::matchRange",
+          "mp4::Mp4FileFragment::Mp4FileFragment",
+          "mp4::Mp4FileFragment::getSize",
+          "mp4::Mp4FileFragment::setFirstSample",
+          "mp4::Mp4FileFragment::setLastSample",
+          "mp4::Mp4FileFragment::setSuspectSample",
+          "Mp4FragScanOperator::calculateGapSize",
+          "mp4::Mp4FileFragment::setLackGapSize",
+          "mp4::Mp4FileFragment::getOffset",
+          "mp4::AtomList::has",
+          "mp4::Mp4FileFragment::enableMergeFront",
+          "mp4::Mp4FileFragment::disableMergeFront",
+          "mp4::AtomList::combine",
+          "mp4::FrameSearch::~FrameSearch"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "MxfFragScanOperator::ParseData",
+        "address": "0x19678c",
+        "observed_direct_callees": [
+          "MxfFragScanOperator::handleHeaderPartitionBuff",
+          "MxfFragScanOperator::init",
+          "MxfFragScanOperator::handleFooterPartitionBuffer",
+          "MxfFragScanOperator::handleSystemItem",
+          "MxfFragScanOperator::matchLastFragmentToContainers",
+          "MxfRecoveryContainer::isCompleted",
+          "MxfFragScanOperator::buildContainer"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "MxfFragScanOperator::ScanFinish",
+        "address": "0x198090",
+        "observed_direct_callees": [
+          "MxfFragScanOperator::matchLastFragmentToContainers",
+          "MxfFragScanOperator::buildContainerPartitial",
+          "MxfFragScanOperator::clearSegments"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "CRawScanOperator::ParseData",
+        "address": "0x2c566c",
+        "observed_direct_callees": [
+          "CRawScanOperator::EnsureFALogInitialized",
+          "CScanOperator::GetDataPersistence",
+          "CAnalyserController::PretreatmentCluster",
+          "CRawScanOperator::DoCutOffOther",
+          "CAnalyserController::GarbageRecyle",
+          "CRawScanOperator::RecoverFile"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "CRawScanOperator::RecoverFile",
+        "address": "0x2c6860",
+        "observed_direct_callees": [
+          "CRawScanOperator::BuildRawFileInfo",
+          "CRawScanOperator::SaveFileRecord"
+        ]
+      },
+      {
+        "module": "libscanopreator.dylib",
+        "function": "CRawScanOperator::Traversal",
+        "address": "0x2c704c",
+        "observed_direct_callees": [
+          "CRawScanOperator::RecoverFile",
+          "CAnalyserController::GarbageRecyle"
+        ]
+      },
+      {
+        "module": "WsVideoRepairLib.dylib",
+        "function": "Mp4AdvanceVideoRepair::Repair",
+        "address": "0x51e468",
+        "observed_direct_callees": [
+          "media::mp4::Mp4VideoRepairController::setConfig",
+          "media::mp4::Mp4VideoRepairController::analyzeSampleFile",
+          "Mp4AdvanceVideoRepair::logInformation",
+          "media::mp4::Mp4VideoRepairController::analyzeCorruptedFile"
+        ]
+      },
+      {
+        "module": "WsVideoRepairLib.dylib",
+        "function": "Mp4AdvanceVideoRepair::AutoRepair",
+        "address": "0x51eb18",
+        "observed_direct_callees": [
+          "media::mp4::Mp4VideoRepairController::analyzeCorruptedFileSmartlyV3",
+          "media::mp4::Mp4VideoRepairController::analyzeCorruptedFile",
+          "Mp4AdvanceVideoRepair::logInformation"
+        ]
+      },
+      {
+        "module": "WsVideoRepairLib.dylib",
+        "function": "Mp4AdvanceVideoRepair::GetRepairedVideo",
+        "address": "0x51f114",
+        "observed_direct_callees": [
+          "Mp4AdvanceVideoRepair::getPreviewExtension",
+          "media::mp4::Mp4VideoRepairController::saveRepairedFileTo"
+        ]
+      },
+      {
+        "module": "WsVideoRepairLib.dylib",
+        "function": "VideoRepairFactory::GetVideoRepair",
+        "address": "0x546348",
+        "observed_direct_callees": [
+          "MtsAdvanceRepair::MtsAdvanceRepair",
+          "Mp4AdvanceVideoRepair::Mp4AdvanceVideoRepair",
+          "AviAdvanceRepair::AviAdvanceRepair",
+          "MkvAdvanceRepair::MkvAdvanceRepair",
+          "WmvAdvanceRepair::WmvAdvanceRepair",
+          "MxfAdvanceRepair::MxfAdvanceRepair",
+          "MpegAdvanceRepairEx::MpegAdvanceRepairEx",
+          "R3dAdvanceVideoRepair::R3dAdvanceVideoRepair"
+        ]
+      }
+    ]
+  },
+  "windows": {
+    "scan_module": {
+      "file": "scanopreator.dll",
+      "bytes": 5376728,
+      "sha256": "e4981d562a8d14e2f2ff309bbde5e318c0ad6442be00d42a733c5269cc542a3a",
+      "architecture": "AMD64"
+    },
+    "advanced_factory": {
+      "rva": "0x201190",
+      "va": "0x180201190",
+      "dispatch": [
+        {
+          "mask_or_bit": "0x3f",
+          "constructed_type": "Mp4FragScanOperator",
+          "rtti_linked_control_block_table_va": "0x1803a7728"
+        },
+        {
+          "mask_or_bit": "0x17c0",
+          "constructed_type": "MiscFragScanOperator",
+          "rtti_linked_control_block_table_va": "0x1803a7750"
+        },
+        {
+          "mask_or_bit": "bit 11",
+          "constructed_type": "MxfFragScanOperator",
+          "rtti_linked_control_block_table_va": "0x1803a7778"
+        },
+        {
+          "mask_or_bit": "bit 15",
+          "constructed_type": "JpegFragScanOperator",
+          "rtti_linked_control_block_table_va": "0x1803a77a0"
+        },
+        {
+          "mask_or_bit": "bit 20",
+          "constructed_type": "PdfFragScanOperator",
+          "rtti_linked_control_block_table_va": "0x1803a77c8"
+        },
+        {
+          "mask_or_bit": "0x40e00000",
+          "constructed_type": "ZipFragScanOperator",
+          "rtti_linked_control_block_table_va": "0x1803a77f0"
+        }
+      ],
+      "mp4_constructor_va": "0x18015af70",
+      "limits": "Tables belong to std::_Ref_count_obj2 wrappers; individual input-bit format enum names were not reconstructed."
+    },
+    "sd_plugin": {
+      "file": "plugins/SDCardPlugin.dll",
+      "bytes": 8304344,
+      "sha256": "5b7d4ff2beeb22b151ea8b229459e92210b0e332b9d5b8adb9852f9d608239bd",
+      "exports_rva": {
+        "qt_plugin_instance": "0x2bb7",
+        "qt_plugin_query_metadata": "0x130c"
+      },
+      "evidence_level": "PE exports and scoped Qt/interface identifiers, not a traced UI-to-parser runtime path."
+    },
+    "fat32_instruction_findings": [
+      {
+        "claim": "Scan initializes geometry, obtains root directory chain, queues its clusters, then calls SearchClusters.",
+        "evidence": [
+          "0x1800a0473 -> Init",
+          "0x1800a0507..0521 root cluster >=2 and <= max",
+          "0x1800a0547..0556 -> chain helper 0x18008eea0",
+          "0x1800a05b2..05c2 -> queue helper 0x18009c370",
+          "0x1800a063d -> SearchClusters"
+        ]
+      },
+      {
+        "claim": "Small FAT is fully read when BPB FAT size * bytes per sector <=16 MiB. Larger FAT bypasses this preload; this is not a claim that larger volumes are skipped.",
+        "evidence": [
+          "0x18009d7e4..0803",
+          "0x1800a018c..0192 allocate FAT byte count",
+          "0x1800a0236..0264 read from reserved-sector byte offset and test short read"
+        ]
+      },
+      {
+        "claim": "SearchClusters iterates a dynamically growing queue, one cluster read per queue entry. Not a proven linear whole-data-region search.",
+        "evidence": [
+          "0x1800a0951..0979 queue length and cluster bound",
+          "0x1800a0a40..0a8e offset=(cluster*sectors_per_cluster+base_sector)*bytes_per_sector, read cluster bytes",
+          "0x1800a0c88 -> ParseDirEntrys",
+          "0x1800a0af5..0b0d re-read queue length each iteration"
+        ]
+      },
+      {
+        "claim": "Directories marked deleted are queued with a deleted flag, unlike our live-tree-only walker.",
+        "evidence": [
+          "0x18009e468 directory attribute bit0x10 branch",
+          "0x18009ed94..09edb6 first-byte0xe5 OR inherited-deleted flag -> queue helper with r9b=1",
+          "0x18009c575..09c5e8 stores cluster, path, boolean in parallel containers"
+        ]
+      },
+      {
+        "claim": "Additional deferred directory cluster set is expanded once when the current queue end is reached.",
+        "evidence": [
+          "0x18009edd1..09ee7e stores deferred clusters in tree+0x768",
+          "0x1800a0c8d..0cb8 last queue element and phase flag -> 0x18009fd90",
+          "0x18009fddf..0a00a9 iterates deferred set and queues clusters with flag1"
+        ]
+      },
+      {
+        "claim": "Parser recognizes normal 32-byte records, LFN attribute0x0f, deleted0xe5, directory0x10, and stops on first-byte zero. No slack-after-zero search proven in this operator.",
+        "evidence": [
+          "0x18009de86..09de94 zero -> exit path",
+          "0x18009def5..09df15 LFN and deleted",
+          "0x18009e842..09e85b step32 and buffer bound"
+        ]
+      },
+      {
+        "claim": "Parser calls file runlist builder and skips a record when it fails. This corroborates extent/runlist abstraction, not a proof of arbitrary fragmented-deleted-file reconstruction.",
+        "evidence": [
+          "0x18009f117..09f132 -> 0x18008e5b0 and null test",
+          "0x18009f182 Get RunList fail",
+          "0x18009f2f5..09f301 stores runlist on file result"
+        ]
+      },
+      {
+        "claim": "Cancellation and progress are queue-oriented.",
+        "evidence": [
+          "0x1800a0940..094b stop token at each cluster",
+          "0x18009de46..09de51 stop token at each record",
+          "0x1800a0cc5..0cf8 integer100*(processed+1)/current_queue_length with monotonic floor",
+          "0x1800a0d1f..0d24 callback return can stop traversal"
+        ]
+      }
+    ],
+    "fat32_limits": [
+      "No runtime output equivalence measured.",
+      "No whole-volume sweep established in this specific FAT32 deletion operator. Other general/advanced operators may perform it.",
+      "No video codec or MP4 reconstruction behavior inferred from this FAT module.",
+      "ReadSmallFAT/GetBitmap do not establish mirror validation or perfect corruption handling."
+    ]
+  },
+  "public_sources": [
+    {
+      "url": "https://recoverit.wondershare.com/version-history.html",
+      "role": "Vendor version history; not independent performance validation."
+    },
+    {
+      "url": "https://recoverit.wondershare.com/guide.html",
+      "role": "Vendor SD and Enhanced Recovery workflows; version/platform applicability requires care."
+    },
+    {
+      "url": "https://recoverit.wondershare.com/faq/quick-scan-vs-deep-scan.html",
+      "role": "Vendor explanation of ordinary scan modes."
+    }
+  ],
+  "memory_regainer_scope": "v0.1.2 does not implement MP4/MOV/MXF/MTS fragment reconstruction or automatic video repair."
+}

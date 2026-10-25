@@ -49,3 +49,7 @@ MP4, MOV, MKV, audio formats other than WAV, camera RAW, HEIC, TIFF, RAR, 7z, SQ
 | Imaging | Sequential full-source image; stop on first error; no bad-sector retries, mapfile resume or ddrescue backend |
 | Large result sets | Virtualized rendering, but in-memory backend result index and JSON snapshots; no million-result memory qualification |
 | Forensic certification | None; source locking, hardware write blocking and chain-of-custody certification are outside this release |
+
+## v0.1.2 result presentation and FAT error isolation
+
+Displayed capacity units are decimal KB/MB/GB/TB; raw offsets remain byte counts. Quick Scan completion explicitly describes metadata-only coverage and positive durations below one second are shown as less than one second. Partition inventory and general method assumptions are separate from operation warnings. FAT32 invalid root clusters are reported. A mirrored-table conflict affecting one deleted candidate or one directory continuation does not erase already found independent candidates; skipped records or ranges are reported. Device I/O failures and cancellation remain fatal. These changes do not add deleted-directory traversal or video-fragment reconstruction.

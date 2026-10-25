@@ -10,6 +10,8 @@ use std::{
     sync::atomic::AtomicBool,
 };
 
+pub(crate) const METHOD_NOTE: &str = "exFAT undelete is limited to intact inactive contiguous streams in live directories on clean single-FAT revision 1.00 volumes. Deleted directories, TexFAT, fragmented files and partial initialization are unsupported.";
+
 const MAX_DIRECTORY: u64 = 256 * 1024 * 1024;
 const PAGE: u64 = 64 * 1024;
 fn invalid(message: &str) -> Error {
@@ -563,6 +565,5 @@ pub(crate) fn scan_deleted(
     if malformed > 0 {
         notices.push(format!("{malformed} exFAT entry sets skipped because their shape, checksum, or fields were invalid/unsupported."));
     }
-    notices.push("exFAT undelete is limited to intact inactive contiguous streams in live directories on clean single-FAT revision 1.00 volumes. Deleted directories, TexFAT, fragmented files and partial initialization are unsupported.".into());
     Ok((entries, notices))
 }

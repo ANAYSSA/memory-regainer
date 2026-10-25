@@ -1,32 +1,25 @@
-# Memory Regainer v0.1.1
+# Memory Regainer v0.1.2
 
-v0.1.1 focuses on Windows raw-device access, visible progress and protection from automatic idle sleep during recovery work. It follows a report of a USB scan appearing stalled and returning OS error 1 after sleep. The old regular-file metadata call reproduced `Incorrect function. (os error 1)` on a read-only Windows scratch disk; the replacement reader passed on the same disk. The original physical USB/sleep sequence has not been reproduced.
+This update clarifies Quick Scan results and byte units, preserves valid FAT results when an independent record is damaged, and records a deeper static analysis of Recoverit. It does **not** add Recoverit-equivalent SD-card or fragmented-video recovery.
 
 ## Changes
 
-- Windows requests administrator access through the standard UAC prompt at application launch. The whole application runs elevated, including image-only work; no access-control bypass is used.
-- Source opening, fingerprints and destination preparation run in the background, with explicit preparation and verification stages. Underlying OS errors retain operation details.
-- Progress distinguishes stages with known byte totals from indeterminate metadata/device work. The UI shows elapsed time and measured activity; ETA appears only with sufficient recent same-stage progress and disappears when it cannot be supported.
-- Active scans, recovery and imaging request idle system sleep protection on Windows/macOS and release it afterward. The UI reports whether the request succeeded. The display may dim; manual sleep, lid closure, shutdown, unplugging and battery loss can still interrupt work.
-- A shared raw-device reader uses device-specific length/sector queries, aligned reads and a bounded 512 KiB data cache. Advanced raw scans require sector-aligned boundaries; image scans retain arbitrary byte ranges. Preview and recovery expose only requested content bytes.
-- Project-owned documentation and release descriptions are in English. The application retains English and Russian UI options.
+- Sizes now use decimal **KB, MB, GB and TB** (1 GB = 1,000,000,000 bytes). Stored byte offsets and recovered content are unchanged. A capacity previously shown as about 115 GiB will therefore appear as about 124 GB.
+- A completed operation taking less than one second displays **Less than 1 s**, rather than 00:00. Completed Quick Scan explicitly says that it searched filesystem metadata, not the entire source for file signatures.
+- Detected partitions and general FAT/exFAT method limitations appear in a neutral information section. Actual skipped-data or damaged-structure warnings remain warnings; read failures remain errors.
+- FAT32 root-cluster values outside the valid data-cluster range are rejected and reported. A damaged FAT record or directory-chain link no longer discards already found independent candidates. Read errors and cancellation still stop the scan.
+- The English research report now includes verified installer identity and selected instruction-level scan, SD-card profile and video-processing call paths from the supplied Windows binaries and an official signed macOS payload. No proprietary binary, source code or asset is bundled.
 
 ## Validation
 
-The latest local run passed 51 Rust and 38 frontend tests (89 total); strict workspace Clippy passed. A native macOS read-only disposable device probe passed, and a separate power probe confirmed that the idle-sleep assertion appeared while active and disappeared on completion. Post-review formatting, Clippy and Rust tests passed. [Native preflight builds](https://github.com/ANAYSSA/memory-regainer/actions/runs/40207498239) passed on Windows x64 and both macOS architectures; Windows additionally passed a read-only 32 MiB VHD probe and embedded UAC-manifest verification. [Tagged native builds and publication](https://github.com/ANAYSSA/memory-regainer/actions/runs/40208121042) and [source verification](https://github.com/ANAYSSA/memory-regainer/actions/runs/40208119159) also passed. Downloaded installers and source matched the published SHA-256 checksums; both DMGs passed integrity verification. Exact test scope is described in [VALIDATION.md](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.1/docs/VALIDATION.md). Real Windows USB sleep/wake, disconnect/reconnect and damaged-device qualification remain outstanding.
+Local checks passed 56 Rust tests (49 core and 7 desktop) and 38 frontend tests: **94 total**. The release workflow runs tests and builds Windows x64 EXE, macOS Apple Silicon DMG and macOS Intel DMG. Final native outcomes and downloaded-asset checks are recorded after publication in [validation](https://github.com/ANAYSSA/memory-regainer/blob/main/docs/VALIDATION.md).
 
-Cancellation is cooperative; a blocked OS read may delay stopping. There is no resumable scan checkpoint or automatic recovery after a device disappears. An elapsed timer shows that the UI is responsive, not that the disk is delivering new bytes.
+## Scope
 
-## Recovery scope and downloads
+A Quick Scan reading only a small amount of metadata is not evidence that the entire device has been searched, nor a claim that every recoverable file was found. The two messages reported in v0.1.1—FAT method assumptions and a FAT32 partition description—were informational, not a device failure.
 
-The recovery scope remains image-based recovery, FAT metadata undelete, narrow exFAT metadata undelete and seven bounded carvers: JPEG, PNG, PDF, GIF, ZIP, BMP and WAV. exFAT requires clean single-FAT revision 1.00 volumes and intact fully initialized contiguous deleted streams with currently free clusters. NTFS/APFS/ext4 metadata recovery, generic fragmented-file reconstruction and MP4/MOV carving are not implemented. See the [feature matrix](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.1/docs/FEATURES.md).
+Content carving remains limited to JPEG, PNG, PDF, GIF, ZIP, BMP and WAV. MP4/MOV/MXF/MTS content recovery and video-fragment reconstruction are **not implemented**. A supported FAT/exFAT deleted record can identify another file type, but this does not establish playable-video recovery. The research is a bounded reverse analysis, not a complete reconstruction of all Recoverit algorithms or proof of matching recovery results. [Read the detailed findings](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.2/docs/RECOVERIT_ARCHITECTURE_REVIEW.md).
 
-Native packages target Windows x64 EXE, macOS Apple Silicon DMG and macOS Intel DMG. Windows WebView2 installation may require internet if the runtime is absent; recovery works offline. Installers are unsigned on Windows and are not Apple Developer ID signed or notarized. Release assets include matching source and SHA-256 checksums.
+Windows continues to request administrator permission at launch. Idle system sleep protection remains active during scans, recovery and imaging; it cannot override manual sleep, lid closure, shutdown or power loss. Installers remain unsigned on Windows and without Apple Developer ID signing or notarization on macOS. Recovery works offline; installing missing WebView2 may require internet.
 
-Use a separate healthy destination and prefer a disk image. Overwritten bytes, TRIM and inaccessible encrypted data cannot be recovered by this application.
-
-## Research and independence
-
-Further bounded static inspection of supplied Recoverit modules found direct power-management and asynchronous-dispatch API references. Those references do not reveal the recovery algorithms or prove their runtime behavior. Official PhotoRec/TestDisk source and GNU ddrescue documentation informed a comparison of device geometry, cooperative cancellation, phased progress and persistent acquisition state. No proprietary code, assets or binaries were incorporated; neither open-source recovery engine is bundled. See [research details](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.1/docs/RECOVERY_IO_RESEARCH.md).
-
-GPL-3.0-or-later, with dependency origins and notices in the source tree. No subscription, activation, telemetry, watermark or paid recovery limit. The documented Linux dependency audit warnings remain relevant; see [AUDIT.md](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.1/docs/AUDIT.md).
+The release includes matching source, license notices and SHA-256 checksums. GPL-3.0-or-later. See the [feature matrix](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.2/docs/FEATURES.md) for exact supported recovery cases.

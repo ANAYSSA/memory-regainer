@@ -39,5 +39,18 @@
 .progress-issue p { margin-top:4px; }
 .technical-detail { overflow-wrap:anywhere; font-size:9px; }
 .progress-help { margin-top:12px; color:var(--muted); font-size:10px; line-height:1.7; }
+.scan-information { margin-top:12px; padding:13px 16px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--muted); font-size:11px; }
+.scan-information summary { cursor:pointer; display:flex; align-items:center; gap:8px; color:var(--text); }
+.scan-information summary::after { content:'+'; margin-left:auto; font-size:14px; color:var(--muted); }
+.scan-information[open] summary::after { content:'−'; }
+.partition-table { overflow:auto; margin-top:16px; }
+.partition-table table { width:100%; border-collapse:collapse; text-align:left; font-size:10px; }
+.partition-table caption { text-align:left; color:var(--text); font-weight:600; font-size:11px; padding-bottom:10px; }
+.partition-table th, .partition-table td { padding:9px 12px 9px 0; border-bottom:1px solid var(--line); }
+.partition-table th { font-weight:500; }
+.partition-table td { color:var(--text); overflow-wrap:anywhere; min-width:75px; }
+.method-notes { margin-top:16px; }
+.method-notes h3 { font-size:11px; font-weight:600; color:var(--text); }
+.method-notes p { margin-top:8px; line-height:1.7; overflow-wrap:anywhere; }
 .job-progress progress:indeterminate { background:var(--line); }
 @media(max-width:930px) { .progress-timing { font-size:10px; }.progress-title { flex-wrap:wrap; }.progress-stage { margin-left:0; } }

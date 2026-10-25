@@ -2,10 +2,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { JobProgress } from './JobProgress';
 import type { ProgressMonitor } from './JobProgress';
-import type { Job } from './types';
+import type { Job, Lang } from './types';
 const base: Job = { id: 'test', mode: 'deep', sourceName: 'fixture.img', stage: 'carving', elapsedSeconds: 4, progressDeterminate: true, sleepInhibited: true, sleepInhibitionError: null, status: 'running', progress: { scanned: 200, total: 1000, found: 2 }, entries: [], warnings: [], error: null };
 const monitor: ProgressMonitor = { now: 4000, elapsed: 4, lastResponseAt: 4000, pollError: '', progressSamples: [{ timeMs: 0, stage: 'carving', scanned: 0, total: 1000 }, { timeMs: 4000, stage: 'carving', scanned: 200, total: 1000 }], cancelling: false, cancelError: '', launching: false, onRetry: () => {} };
-const render = (job: Job, state = monitor, active = true) => renderToStaticMarkup(<JobProgress job={job} active={active} monitor={state} lang="en" onCancel={() => {}} />);
+const render = (job: Job, state = monitor, active = true, lang: Lang = 'en') => renderToStaticMarkup(<JobProgress job={job} active={active} monitor={state} lang={lang} onCancel={() => {}} />);
 describe('visible operation state', () => {
   it('shows the real stage, elapsed time, measured ETA, and confirmed sleep protection', () => {
     const html = render(base);
@@ -19,9 +19,11 @@ describe('visible operation state', () => {
     expect(html).toContain('Metadata read'); expect(html).not.toContain('20.0%'); expect(html).not.toContain('≈');
   });
   it('shows actual metadata source reads without a fabricated processed denominator', () => {
-    const html = render({ ...base, mode: 'quick', stage: 'metadata', progressDeterminate: false, progress: { scanned: 0, total: 1000, found: 2, bytes_read: 2048 } });
-    expect(html).toContain('Source bytes read'); expect(html).toContain('2 KiB');
-    expect(html).toContain('including revisits and cache read-ahead'); expect(html).not.toContain('Metadata read'); expect(html).not.toContain('20.0%');
+    for (const [bytesRead, size] of [[999, '999 B'], [1000, '1 KB'], [2048, '2.05 KB'], [1_048_576, '1.05 MB'], [1_000_000_000, '1 GB'], [1_000_000_000_000, '1 TB']] as const) {
+      const html = render({ ...base, mode: 'quick', stage: 'metadata', progressDeterminate: false, progress: { scanned: 0, total: 1000, found: 2, bytes_read: bytesRead } });
+      expect(html).toContain('Source bytes read'); expect(html).toContain(size);
+      expect(html).toContain('including revisits and cache read-ahead'); expect(html).not.toContain('Metadata read'); expect(html).not.toContain('20.0%');
+    }
   });
   it('shows preparation and queued cancellation before a job id exists', () => {
     const html = render({ ...base, id: '', stage: 'preparing', progressDeterminate: false, sleepInhibited: false }, { ...monitor, launching: true, cancelling: true, lastResponseAt: 0 });
@@ -37,8 +39,14 @@ describe('visible operation state', () => {
     expect(html).toContain('Sleep protection unavailable'); expect(html).toContain('OS request rejected');
     expect(html).not.toContain('Idle sleep prevented during the operation');
   });
-  it('retains final elapsed duration without showing a running stage indicator', () => {
+  it('retains final elapsed duration and scope without showing a running stage indicator', () => {
     const html = render({ ...base, status: 'completed', stage: 'finished', elapsedSeconds: 3661 }, monitor, false);
     expect(html).toContain('1:01:01'); expect(html).toContain('Processing finished'); expect(html).not.toContain('Engine response');
+    const quick = { ...base, mode: 'quick', status: 'completed' as const, stage: 'finished', elapsedSeconds: 0.12, progressDeterminate: false };
+    const en = render(quick, monitor, false);
+    expect(en).toContain('Less than 1 s'); expect(en).not.toContain('00:00');
+    expect(en).toContain('Metadata scan finished'); expect(en).toContain('does not scan the entire contents'); expect(en).not.toContain('All operation stages finished');
+    const ru = render(quick, monitor, false, 'ru');
+    expect(ru).toContain('Менее 1 с'); expect(ru).toContain('Поиск по метаданным завершён'); expect(ru).toContain('Полное содержимое носителя в этом режиме не сканируется');
   });
 });

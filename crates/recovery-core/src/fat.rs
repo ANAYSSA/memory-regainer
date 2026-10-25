@@ -4,6 +4,8 @@ use std::{
     sync::atomic::AtomicBool,
 };
 
+pub(crate) const METHOD_NOTE: &str = "FAT undelete examines deleted file records in live directories and assumes contiguous, currently free clusters. Deleted directories and orphan metadata are not searched; original allocation chains are unavailable after normal deletion. Verify recovered contents.";
+
 struct Fat {
     base: u64,
     fat_start: u64,
@@ -82,6 +84,9 @@ impl Fat {
         } else {
             0
         };
+        if bits == 32 && !(2..clusters + 2).contains(&root_cluster) {
+            return Err(Error::Invalid("FAT32 root cluster is out of range".into()));
+        }
         let fat_start = part.offset + reserved * sector;
         let root = fat_start + u64::from(count) * fat_size;
         Ok(Self {
@@ -141,9 +146,7 @@ impl Fat {
         if self.active.is_none() {
             for other in 1..self.fat_count {
                 if self.table_entry(source, cluster, other)? != value {
-                    return Err(Error::Invalid(
-                        "Mirrored FAT tables disagree; metadata recovery stopped".into(),
-                    ));
+                    return Err(Error::Invalid("Mirrored FAT tables disagree".into()));
                 }
             }
         }
@@ -330,12 +333,27 @@ pub(crate) fn scan_deleted(
                             continue;
                         }
                         let mut free = true;
+                        let mut invalid_metadata = false;
                         for step in 0..needed {
                             check_cancel(cancel)?;
-                            if fat.next(source, start + step as u32)? != 0 {
-                                free = false;
-                                break;
+                            match fat.next(source, start + step as u32) {
+                                Ok(0) => {}
+                                Ok(_) => {
+                                    free = false;
+                                    break;
+                                }
+                                Err(Error::Invalid(reason)) => {
+                                    notices.push(format!(
+                                        "Partial FAT scan: deleted record {directory}{name} at byte {record_offset} was skipped: {reason}. Other independent records were retained."
+                                    ));
+                                    invalid_metadata = true;
+                                    break;
+                                }
+                                Err(error) => return Err(error),
                             }
+                        }
+                        if invalid_metadata {
+                            continue;
                         }
                         if !free {
                             rejected += 1;
@@ -373,7 +391,16 @@ pub(crate) fn scan_deleted(
             if first == 0 || finished {
                 break;
             }
-            let next = fat.next(source, cluster)?;
+            let next = match fat.next(source, cluster) {
+                Ok(next) => next,
+                Err(Error::Invalid(reason)) => {
+                    notices.push(format!(
+                        "Partial FAT scan: directory {directory} stopped at cluster {cluster}: {reason}. Remaining directory records were skipped; previously found records were retained."
+                    ));
+                    break;
+                }
+                Err(error) => return Err(error),
+            };
             if fat.is_end(next) {
                 break;
             }
@@ -389,6 +416,5 @@ pub(crate) fn scan_deleted(
     if rejected > 0 {
         notices.push(format!("{rejected} deleted FAT records were skipped because their ranges were invalid or clusters are currently allocated. Fragmented deleted FAT chains are not reconstructed."));
     }
-    notices.push("FAT undelete assumes contiguous, currently free clusters. Verify recovered contents; original allocation chains are unavailable after normal deletion.".into());
     Ok((found, notices))
 }

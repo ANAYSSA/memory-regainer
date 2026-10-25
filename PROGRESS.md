@@ -50,3 +50,7 @@ The checked boxes above indicate implementation or documentation work, not Windo
 4. Add source-bound resumable acquisition/checkpoint state and evaluate an explicitly packaged optional ddrescue integration.
 5. Expand parser corruption/property/fuzz coverage and automated desktop recovery checks.
 6. Add signed/notarized builds when credentials are available; investigate a narrow privileged helper and APFS separately.
+
+## Current update: v0.1.2
+
+Implemented decimal MB/GB display, clear subsecond timing and metadata-only Quick completion, neutral partition/method information, and focused FAT error isolation. Local integrated tests passed (56 Rust + 38 frontend). The extended Recoverit report records selected actual instruction/call paths, including SD profile detection and video reconstruction/repair. No new video-recovery implementation is claimed. Native publication and cleanup remain pending.

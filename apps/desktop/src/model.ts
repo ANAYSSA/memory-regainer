@@ -2,8 +2,8 @@ import type { Entry } from './types';
 export function formatBytes(value: number): string {
   if (!Number.isFinite(value) || value < 0) return '—';
   if (value === 0) return '0 B';
-  const unit = Math.min(Math.floor(Math.log(value) / Math.log(1024)), 5);
-  return `${(value / 1024 ** unit).toLocaleString(undefined, { maximumFractionDigits: unit ? 1 : 0 })} ${['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'][unit]}`;
+  const unit = Math.min(Math.max(0, Math.floor(Math.log10(value) / 3)), 4);
+  return `${(value / 1000 ** unit).toLocaleString(undefined, { maximumFractionDigits: unit ? 2 : 0 })} ${['B', 'KB', 'MB', 'GB', 'TB'][unit]}`;
 }
 export function parseRange(start: string, end: string, size: number): { start: number | null; end: number | null } {
   const parse = (input: string) => {

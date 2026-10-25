@@ -65,6 +65,14 @@ const WAV: &[u8] = include_bytes!("fixtures/original.wav");
 // A valid FAT volume with a deleted directory entry whose FAT chain was cleared.
 // All images are sparse ordinary files. No tests access a real device.
 fn fat_image(bits: u8, payload: &[u8], mbr: bool) -> (Fixture, u64, u64, u64) {
+    fat_image_with_tables(bits, payload, mbr, 1)
+}
+fn fat_image_with_tables(
+    bits: u8,
+    payload: &[u8],
+    mbr: bool,
+    tables: u8,
+) -> (Fixture, u64, u64, u64) {
     let clusters: u32 = match bits {
         12 => 1000,
         16 => 4096,
@@ -74,9 +82,9 @@ fn fat_image(bits: u8, payload: &[u8], mbr: bool) -> (Fixture, u64, u64, u64) {
     let roots: u32 = if bits == 32 { 0 } else { 512 };
     let fat_sectors = ((clusters + 2) * u32::from(bits)).div_ceil(8 * 512);
     let root_sectors = (roots * 32).div_ceil(512);
-    let total = reserved + fat_sectors + root_sectors + clusters;
+    let total = reserved + fat_sectors * u32::from(tables) + root_sectors + clusters;
     let base = if mbr { 1024 * 1024 } else { 0 };
-    let root = base + u64::from(reserved + fat_sectors) * 512;
+    let root = base + u64::from(reserved + fat_sectors * u32::from(tables)) * 512;
     let data = root + u64::from(root_sectors) * 512;
     let first: u32 = if bits == 32 { 3 } else { 2 };
     let body = data + u64::from(first - 2) * 512;
@@ -97,7 +105,7 @@ fn fat_image(bits: u8, payload: &[u8], mbr: bool) -> (Fixture, u64, u64, u64) {
     put16(&mut b, 11, 512);
     b[13] = 1;
     put16(&mut b, 14, reserved as u16);
-    b[16] = 1;
+    b[16] = tables;
     put16(&mut b, 17, roots as u16);
     b[21] = 0xf8;
     put32(&mut b, 32, total);
@@ -120,7 +128,13 @@ fn fat_image(bits: u8, payload: &[u8], mbr: bool) -> (Fixture, u64, u64, u64) {
             0xf8, 0xff, 0xff, 0x0f, 0xff, 0xff, 0xff, 0x0f, 0xff, 0xff, 0xff, 0x0f,
         ],
     };
-    write_at(&mut file, fat, init);
+    for table in 0..tables {
+        write_at(
+            &mut file,
+            fat + u64::from(table) * u64::from(fat_sectors) * 512,
+            init,
+        );
+    }
     let dir = if bits == 32 { data } else { root };
     let mut record = [0u8; 32];
     record[..11].copy_from_slice(b"\xe5EMORY  JPG");
@@ -150,6 +164,120 @@ fn deleted_jpeg_fat32_hash_matches_and_source_is_unchanged() {
     assert_eq!(digest(&recovered), digest(JPG));
     assert_eq!(recovered, JPG);
     assert_eq!(before, digest(&fs::read(&f.0).unwrap()));
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    assert_eq!(r.method_notes.len(), 1);
+    assert!(r.method_notes[0].contains("live directories"));
+}
+
+#[test]
+fn fat32_invalid_root_cluster_is_reported_instead_of_empty_success() {
+    for root in [0u32, 1, 65528, 0x0fff_ffff] {
+        let (f, _, _, _) = fat_image(32, JPG, false);
+        let mut file = File::options().write(true).open(&f.0).unwrap();
+        write_at(&mut file, 44, &root.to_le_bytes());
+        let r = scan_now(&f.0, "quick");
+        assert!(r.entries.is_empty());
+        assert!(
+            r.warnings
+                .iter()
+                .any(|s| s.contains("FAT32 root cluster is out of range")),
+            "root {root}: {:?}",
+            r.warnings
+        );
+    }
+}
+
+#[test]
+fn conflicting_fat_candidate_preserves_valid_records_before_and_after_it() {
+    let (f, _, dir, fat) = fat_image_with_tables(32, JPG, false, 2);
+    let fat_bytes = (dir - fat) / 2;
+    let mut file = File::options().write(true).open(&f.0).unwrap();
+    for (index, cluster, name, payload) in [
+        (1, 10u16, b"\xe5ROKEN  PNG", PNG),
+        (2, 12u16, b"\xe5ATER   PDF", PDF),
+    ] {
+        let mut record = [0u8; 32];
+        record[..11].copy_from_slice(name);
+        record[11] = 0x20;
+        put16(&mut record, 26, cluster);
+        put32(&mut record, 28, payload.len() as u32);
+        write_at(&mut file, dir + index * 32, &record);
+        write_at(&mut file, dir + u64::from(cluster - 2) * 512, payload);
+    }
+    write_at(
+        &mut file,
+        fat + fat_bytes + 10 * 4,
+        &0x0fff_ffffu32.to_le_bytes(),
+    );
+    let r = scan_now(&f.0, "quick");
+    assert_eq!(r.entries.len(), 2, "{:?}", r.warnings);
+    assert_eq!(r.entries[0].name, "_EMORY.JPG");
+    assert_eq!(r.entries[1].name, "_ATER.PDF");
+    assert_eq!(
+        digest(&read_entry(&f.0, &r.entries[0], 100_000).unwrap()),
+        digest(JPG)
+    );
+    assert_eq!(
+        digest(&read_entry(&f.0, &r.entries[1], 100_000).unwrap()),
+        digest(PDF)
+    );
+    assert_eq!(r.warnings.len(), 1);
+    assert!(r.warnings[0].contains("Partial FAT scan"));
+    assert!(r.warnings[0].contains("_ROKEN.PNG"));
+    assert!(r.warnings[0].contains("Mirrored FAT tables disagree"));
+}
+
+#[test]
+fn conflicting_directory_chain_preserves_already_found_records() {
+    let (f, _, dir, fat) = fat_image_with_tables(32, JPG, false, 2);
+    let fat_bytes = (dir - fat) / 2;
+    let mut file = File::options().write(true).open(&f.0).unwrap();
+    // Fill the remaining root records with volume-label records so traversal
+    // reaches the FAT chain, rather than a legitimate zero end marker.
+    let mut label = [b' '; 32];
+    label[11] = 0x08;
+    for index in 1..16 {
+        write_at(&mut file, dir + index * 32, &label);
+    }
+    write_at(&mut file, fat + fat_bytes + 2 * 4, &8u32.to_le_bytes());
+    let r = scan_now(&f.0, "quick");
+    assert_eq!(r.entries.len(), 1, "{:?}", r.warnings);
+    assert_eq!(read_entry(&f.0, &r.entries[0], 100_000).unwrap(), JPG);
+    assert!(r
+        .warnings
+        .iter()
+        .any(|s| s.contains("directory / stopped at cluster 2")
+            && s.contains("Mirrored FAT tables disagree")));
+}
+
+#[test]
+fn metadata_read_failure_remains_fatal() {
+    let (f, _, _, _) = fat_image(32, JPG, false);
+    let result = scan(&f.0, &opts("quick"), &AtomicBool::new(false), |p| {
+        if p.stage == "metadata" {
+            // Simulate an ordinary image disappearing beneath an active reader.
+            // The directory lies beyond any discovery read-ahead cache page.
+            File::options()
+                .write(true)
+                .open(&f.0)
+                .unwrap()
+                .set_len(64 * 1024)
+                .unwrap();
+        }
+    });
+    assert!(matches!(result, Err(Error::Io(_))), "{result:?}");
+}
+
+#[test]
+fn metadata_cancellation_remains_fatal() {
+    let (f, _, _, _) = fat_image(32, JPG, false);
+    let cancel = AtomicBool::new(false);
+    let result = scan(&f.0, &opts("quick"), &cancel, |p| {
+        if p.stage == "metadata" {
+            cancel.store(true, Ordering::SeqCst);
+        }
+    });
+    assert!(matches!(result, Err(Error::Cancelled)));
 }
 #[test]
 fn deleted_files_fat12_and_fat16_inside_mbr() {

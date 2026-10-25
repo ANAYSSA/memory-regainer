@@ -108,6 +108,8 @@ pub struct ScanResult {
     pub entries: Vec<Entry>,
     pub partitions: Vec<Partition>,
     pub warnings: Vec<String>,
+    #[serde(default)]
+    pub method_notes: Vec<String>,
     pub bytes_scanned: u64,
 }
 
@@ -214,6 +216,7 @@ pub fn scan_with_size(
     reporter.borrow_mut().stage("partitions", true, 0, 0, 0);
     check_cancel(cancel)?;
     let mut warnings = Vec::new();
+    let mut method_notes = Vec::new();
     let partial_range = start != 0 || end != source.len;
     let partitions = if partial_range {
         // Enforce the range in the read primitive too. Global partition tables
@@ -250,8 +253,10 @@ pub fn scan_with_size(
                     .position(scanned, entries.len() + count);
             };
             let result = if part.filesystem == "exFAT" {
+                method_notes.push(exfat::METHOD_NOTE.to_string());
                 exfat::scan_deleted(&mut source, part, cancel, &mut report)
             } else {
+                method_notes.push(fat::METHOD_NOTE.to_string());
                 fat::scan_deleted(&mut source, part, cancel, &mut report)
             };
             match result {
@@ -311,10 +316,13 @@ pub fn scan_with_size(
     check_cancel(cancel)?;
     warnings.sort();
     warnings.dedup();
+    method_notes.sort();
+    method_notes.dedup();
     Ok(ScanResult {
         entries,
         partitions,
         warnings,
+        method_notes,
         bytes_scanned: scanned.min(total),
     })
 }
