@@ -23,7 +23,7 @@ Live directories are traversed using their FAT chains or NoFatChain extents. Dir
 
 - Quick inspects supported FAT/exFAT metadata. Its byte counter measures processed work, not a claim that every source sector was read.
 - Deep performs metadata inspection and sequential signature scanning. It operates on real bytes and stops on read errors.
-- Advanced applies a start/end byte range. End offsets are exclusive. Reads stay inside the selected range. For a partial-source range, global partition tables are skipped; FAT/exFAT metadata recovery requires a complete volume beginning at the selected start. It does not repair partition tables or recover filesystem features absent from Quick/Deep.
+- Advanced applies a start/end byte range. End offsets are exclusive. Parsers and scan reads stay inside the selected range. v0.1.1 requires raw-device start and end offsets to align to the device logical sector size; use an image for arbitrary byte ranges. Preview, recovery and fingerprint reads may fetch enclosing sectors for hardware alignment, while exposing only requested bytes. For a partial-source range, global partition tables are skipped; FAT/exFAT metadata recovery requires a complete volume beginning at the selected start. It does not repair partition tables or recover filesystem features absent from Quick/Deep.
 
 The MBR parser covers primary partitions and reports unsupported extended/logical chains. GPT validates primary header/table CRCs and bounds. There is no damaged backup-GPT repair, lost-partition forensic search or partition write operation.
 
@@ -38,12 +38,13 @@ MP4, MOV, MKV, audio formats other than WAV, camera RAW, HEIC, TIFF, RAR, 7z, SQ
 | Capability | State / constraint |
 | --- | --- |
 | Source safety | Source handles are read-only; no format, repair or partition-write command |
-| Raw devices | Discovery and permission reporting; actual access depends on the OS. Not qualified against real damaged media |
+| Raw devices | Discovery and permission reporting; v0.1.1 Windows requests standard UAC elevation. Actual access depends on the OS; not qualified against real damaged media |
 | Destination safety | Separate-physical-device checks for raw-source recovery; fail closed if mapping cannot be established. Disk images are treated as existing independent copies |
 | Output integrity | New recovery folder, sanitized names, temporary output, read-back SHA-256 and per-file status |
 | Source identity | Size, modified time for images, and first/last 64 KiB fingerprint; **not a full-image integrity hash** |
-| Progress | Actual engine counters; results become available at scan completion |
-| Pause / scan checkpoint resume | Unsupported; cancellation is available |
+| Progress | v0.1.1 exposes stage, elapsed time, actual counters, measured rate and conditional ETA; indeterminate metadata/preparation stages do not imply a source-wide percentage. Results become available at scan completion |
+| Pause / scan checkpoint resume | Unsupported; cooperative cancellation can wait for a blocked OS read to return |
+| Idle sleep protection | v0.1.1 requests it during Windows/macOS jobs and reports success/failure; manual sleep, lid closure, shutdown and unplugging remain possible |
 | Saved sessions | Source/options manifest; image session reopening re-runs the scan rather than resuming an interrupted scan |
 | Imaging | Sequential full-source image; stop on first error; no bad-sector retries, mapfile resume or ddrescue backend |
 | Large result sets | Virtualized rendering, but in-memory backend result index and JSON snapshots; no million-result memory qualification |

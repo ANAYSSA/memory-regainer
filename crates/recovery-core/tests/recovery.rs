@@ -520,3 +520,153 @@ fn partial_ranges_never_follow_metadata_outside_selected_bytes() {
     assert!(r.entries.is_empty());
     assert_eq!(r.partitions[0].offset, 4096);
 }
+
+#[test]
+fn stages_distinguish_metadata_work_from_measured_carving() {
+    let f = Fixture::raw(&vec![0; 2 * 1024 * 1024]);
+    for mode in ["quick", "deep"] {
+        let mut events = Vec::new();
+        scan(&f.0, &opts(mode), &AtomicBool::new(false), |p| {
+            events.push(p)
+        })
+        .unwrap();
+        let stages: Vec<&str> = events.iter().map(|p| p.stage.as_str()).collect();
+        assert_eq!(stages.first(), Some(&"opening-source"));
+        assert!(stages.contains(&"partitions"));
+        assert!(stages.contains(&"metadata"));
+        assert_eq!(stages.last(), Some(&"finished"));
+        assert_eq!(stages.contains(&"carving"), mode == "deep");
+        assert!(events
+            .windows(2)
+            .all(|w| w[0].bytes_read <= w[1].bytes_read));
+        for p in events
+            .iter()
+            .filter(|p| ["opening-source", "partitions", "metadata"].contains(&p.stage.as_str()))
+        {
+            assert!(p.indeterminate);
+            assert_eq!(p.total, 0);
+        }
+        for p in events.iter().filter(|p| p.stage == "carving") {
+            assert!(!p.indeterminate);
+            assert_eq!(p.total, 2 * 1024 * 1024);
+            assert!(p.scanned <= p.total);
+        }
+        assert!(events.last().unwrap().bytes_read > 0);
+    }
+}
+
+#[test]
+fn opening_stage_is_delivered_before_source_error() {
+    let f = Fixture::new();
+    let mut events = Vec::new();
+    assert!(
+        scan(&f.0, &opts("deep"), &AtomicBool::new(false), |p| events
+            .push(p))
+        .is_err()
+    );
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].stage, "opening-source");
+    assert!(events[0].indeterminate);
+}
+
+#[test]
+fn large_recovery_reports_written_chunks_and_cancels_before_next_write() {
+    let payload = vec![7u8; 3 * 1024 * 1024];
+    let f = Fixture::raw(&payload);
+    let e = Entry {
+        id: "progress".into(),
+        name: "large.bin".into(),
+        kind: "bin".into(),
+        size: payload.len() as u64,
+        offset: 0,
+        confidence: "unknown".into(),
+        method: "test".into(),
+        notes: vec![],
+        extents: vec![Extent {
+            offset: 0,
+            length: payload.len() as u64,
+        }],
+    };
+    let cancel = AtomicBool::new(false);
+    let mut output = Vec::new();
+    let mut events = Vec::new();
+    let result = recovery_core::recover_entry_with_progress(
+        &f.0,
+        &e,
+        &mut output,
+        &cancel,
+        |written, total| {
+            assert_eq!(total, payload.len() as u64);
+            events.push(written);
+            if written >= 1024 * 1024 {
+                cancel.store(true, Ordering::SeqCst);
+            }
+        },
+    );
+    assert!(matches!(result, Err(Error::Cancelled)));
+    assert_eq!(events, vec![0, 1024 * 1024]);
+    assert_eq!(output, payload[..1024 * 1024]);
+}
+
+#[test]
+fn legacy_progress_deserialization_is_indeterminate_by_default() {
+    let p: recovery_core::Progress =
+        serde_json::from_str(r#"{"scanned":12,"total":100,"found":1}"#).unwrap();
+    assert_eq!(p.stage, "opening-source");
+    assert!(p.indeterminate);
+    assert_eq!(p.bytes_read, 0);
+}
+
+#[test]
+fn registered_capacity_apis_keep_image_bounds_and_range_independent() {
+    let bytes = vec![7u8; 4096];
+    let f = Fixture::raw(&bytes);
+    let options = ScanOptions {
+        mode: "advanced".into(),
+        start: Some(512),
+        end: Some(1024),
+        types: vec![],
+    };
+    let result = recovery_core::scan_with_size(
+        &f.0,
+        &options,
+        Some(u64::MAX),
+        &AtomicBool::new(false),
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(result.bytes_scanned, 512);
+    assert_eq!(result.partitions[0].offset, 512);
+    assert_eq!(result.partitions[0].size, 512);
+    let mut entry = Entry {
+        id: "hint".into(),
+        name: "data.bin".into(),
+        kind: "bin".into(),
+        size: 100,
+        offset: 2000,
+        confidence: "unknown".into(),
+        method: "test".into(),
+        notes: vec![],
+        extents: vec![Extent {
+            offset: 2000,
+            length: 100,
+        }],
+    };
+    assert_eq!(
+        recovery_core::read_entry_with_size(&f.0, &entry, 100, Some(1)).unwrap(),
+        bytes[2000..2100]
+    );
+    let mut out = Vec::new();
+    recovery_core::recover_entry_with_progress_and_size(
+        &f.0,
+        &entry,
+        &mut out,
+        &AtomicBool::new(false),
+        Some(1),
+        |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(out, bytes[2000..2100]);
+    entry.extents[0].offset = 4096;
+    assert!(recovery_core::read_entry_with_size(&f.0, &entry, 100, Some(u64::MAX)).is_err());
+}

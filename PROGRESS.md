@@ -1,54 +1,52 @@
 # Implementation progress
 
-Updated: 25 October 2026. This file is a continuation record, not a claim of full completion of the master specification.
+Updated: 25 October 2026. This record distinguishes shipped work, current changes and unqualified behavior. The application does not implement the full original specification.
 
-## Completed implementation work
+## Released baseline: v0.1.0
 
-- Rust recovery-core and separate Tauri desktop shell created.
-- Read-only source primitives, checked extents, MBR/GPT discovery, FAT free-contiguous undelete, narrow exFAT metadata undelete and seven signature handlers implemented and covered by targeted tests.
-- exFAT support uses original code based on the public Microsoft specification. Eleven exFAT tests pass, including exact deleted-PDF SHA-256 recovery, Unicode names, live directories, allocation conflicts, malformed metadata, range bounds, cancellation, fragmented live-directory traversal and entry-set boundary cases. The generated image also passed native `fsck_exfat -n` after read-only attachment; it was detached afterward. Final core total: 32 tests (1 unit + 20 previous integration + 11 exFAT), with formatting and clippy passed. Final integrated desktop/build evidence belongs in docs/VALIDATION.md.
-- Desktop source registration, background jobs, native dialogs, previews, recovery output handling, imaging and source fingerprints implemented.
-- Russian/English React interface and virtualized results connected to the real backend.
-- Initial native Windows x64, macOS ARM64 and macOS Intel installer builds succeeded in [run 40202352920](https://github.com/ANAYSSA/memory-regainer/actions/runs/40202352920). Those builds preceded the exFAT addition; the updated release requires fresh builds.
-- GPL-3.0-or-later license, independent-project notices, privacy/security/contribution guidance and initial name-search limitations recorded.
-- Resolved dependency metadata inspected: 694 packages; no unresolved license expression. Exact-commit upstream notice supplements retained where registry archives omit their workspace license.
-- Native release `.app` built and launched on Apple Silicon macOS. GUI recovery of 3 synthetic deleted files / 979 bytes completed; independent SHA-256 matched originals. Evidence: docs/gui-recovery-evidence.json.
-- Source published at https://github.com/ANAYSSA/memory-regainer. The updated release publication and artifact verification remain pending final builds.
-- CI [run 40202356372](https://github.com/ANAYSSA/memory-regainer/actions/runs/40202356372) passed. RustSec emitted five allowed Linux dependency warnings; see docs/AUDIT.md. That run preceded the exFAT addition.
+[v0.1.0](https://github.com/ANAYSSA/memory-regainer/releases/tag/v0.1.0) was published from `2ea7d8a8683db758bc1d6eea5c1108908ff05089`. Windows x64 and macOS ARM64/Intel native builds and automated tests passed; published artifact hashes were verified. The release contains:
 
-## Required before this release is considered built
+- An independent Rust core and Tauri/React desktop shell, with English/Russian UI, real scan jobs, previews, filters and virtualized results.
+- Read-only image/device sources, checked extents, MBR/GPT discovery, FAT free-contiguous undelete, narrow exFAT undelete and seven bounded signature handlers.
+- Recovery to new output folders, destination checks, read-back SHA-256 and per-file reports; sequential image acquisition and saved image sessions that rerun a scan.
+- 32 core tests, 4 backend tests and 18 frontend tests. Native macOS GUI recovery, DMG launch, image creation and session reopening were exercised. Full evidence is in [VALIDATION.md](docs/VALIDATION.md).
+- GPL-3.0-or-later licensing, 694 dependency records, license notices, privacy/security guidance and bounded architecture research. The documented five RustSec warnings concern Linux-only target dependencies; see [AUDIT.md](docs/AUDIT.md).
 
-- [x] Run engine unit/integration tests: 32 core tests passed, including all 11 exFAT cases and the two independent-review boundary cases. Final integrated desktop totals are recorded in docs/VALIDATION.md.
-- [x] Run desktop backend tests: 4 passed. Frontend: 18 tests, typecheck/build/lint passed. Workspace fmt/clippy passed.
-- [x] Review and revise Windows destination-volume mapping for canonical paths and volume mount points. Native runtime qualification remains pending.
-- [x] Physical-device manifests skip automatic local session/history writes.
-- [x] Recovery/acquisition error paths revised to preserve reports on cancellation and source-change errors.
-- [x] Build and launch real macOS release app; verify end-to-end GUI fixture recovery.
-- [ ] Generate and inspect final DMGs containing the exFAT addition.
-- [ ] Rebuild native Windows and both macOS architectures after the exFAT addition; collect final installers and checksums.
-- [x] Run RustSec/npm vulnerability audits and document findings. Repeat if the dependency graph changes.
-- [ ] Record exact publication URLs and verified release assets.
-- [x] Record current local evidence in docs/VALIDATION.md; keep platform/release/audit checks pending until executed.
+Task-owned v0.1.0 temporary images, verification downloads, build outputs and test caches were cleaned after publication. Supplied Recoverit files and unrelated user files were preserved. New v0.1.1 work generates separate temporary build/research data.
 
-## Known scope limits
+## Current work: v0.1.1
 
-- No NTFS, ext4 or APFS metadata undelete; detection is distinct from recovery. exFAT is limited to clean single-FAT revision 1.00 volumes and intact fully initialized contiguous deleted streams in live directories.
-- No encrypted-volume bypass, generic fragmented-file reconstruction, media repair, bootable environment or partition modifications.
-- No pause/resume checkpoints. Saved image sessions validate a limited fingerprint and rerun the scan.
+A Windows USB scan was reported as apparently stalled, followed by sleep and OS error 1. Its exact failing operation and hardware behavior have not been reproduced. The current work addresses concrete reader, responsiveness, progress and sleep-management weaknesses without claiming that this report proves their causal connection.
+
+- [x] Move source opening/fingerprinting and destination preparation into background jobs so the UI can report their stage immediately.
+- [x] Preserve original device errors with operation context instead of reducing them to a generic permissions message.
+- [x] Add Windows `requireAdministrator` application manifest using standard UAC approval.
+- [x] Add operation-scoped idle sleep requests on Windows/macOS with status reporting and release on job exit.
+- [x] Add stage, elapsed-time and determinate/indeterminate progress fields; implement stage-aware frontend rate/ETA handling.
+- [ ] Complete shared raw-device reader geometry/alignment/cache changes and focused core tests.
+- [x] Translate project-owned documentation into English and prepare English v0.1.0 release text. Preserve third-party notices verbatim and immutable historical source tags.
+- [x] Extend static Recoverit import research and inspect primary PhotoRec/TestDisk source, GNU ddrescue documentation and Microsoft API contracts. No proprietary code or binaries added; see [RECOVERY_IO_RESEARCH.md](docs/RECOVERY_IO_RESEARCH.md).
+- [ ] Run final integrated Rust/frontend checks, native builds and relevant power/assertion tests; record actual results in [VALIDATION.md](docs/VALIDATION.md).
+- [ ] Publish v0.1.1 Windows/macOS installers with matching source/checksums and verify uploaded assets.
+
+The checked boxes above indicate implementation or documentation work, not Windows USB hardware qualification. The release's exact executed validation is recorded separately.
+
+## Known limits
+
+- No NTFS, ext4 or APFS metadata undelete. exFAT requires clean single-FAT revision 1.00 volumes and intact fully initialized contiguous deleted streams in live directories.
+- No generic fragmented-file reconstruction, video repair, encryption bypass, bootable environment or partition modification.
+- No pause/resume checkpoints. Saved image sessions check a limited fingerprint and rerun the scan.
 - Imaging stops on the first read error; no retry map or resumable ddrescue integration.
-- Results are indexed in memory and returned after scanning. No multi-terabyte or million-result resource benchmark.
-- No Developer ID / Windows code-signing certificates supplied; no Apple notarization.
-- Physical device access and mapping require further platform qualification on disposable hardware.
+- Results remain in memory and become available after scanning. No multi-terabyte or million-result resource benchmark.
+- Cancellation is cooperative and may wait for a blocked OS read. Idle protection does not override manual sleep, lid closure, shutdown, power loss or device removal.
+- No Developer ID/Windows signing certificates or Apple notarization. Windows UAC is a permission request, not a publisher signature.
+- Raw-device geometry, destination mapping, disconnects and sleep/wake need qualification on disposable Windows/macOS hardware.
 
-## Next engineering milestones
+## Next milestones
 
-1. Expand parser corruption/property/fuzz cases and automate desktop end-to-end recovery against disposable image fixtures.
-2. Add paginated/persistent result indexing and live result batches before large-media performance claims.
-3. Expand exFAT interoperability tests and NameHash/up-case validation; then add NTFS MFT/runlist and ext4 extent recovery with explicit support matrices.
-4. Add conservative resumable acquisition with documented provenance and a reviewed optional ddrescue integration.
-5. Qualify raw-device discovery/destination safety on disposable Windows/macOS/Linux devices, including multi-store containers and mounted volumes.
-6. Add signed/notarized release builds when signing credentials become available; investigate APFS recovery separately.
-
-Final local integration before tagging: 36 Rust tests + 18 frontend tests passed; formatting, strict Clippy, lint and production frontend build passed. Local DMG verified and launched; GUI imaging and saved-session restart passed. Native preflight installers for all three platforms passed; tagged release publication remains the next action.
-
-Release v0.1.0 is published: https://github.com/ANAYSSA/memory-regainer/releases/tag/v0.1.0 . Final Windows x64 and macOS ARM64/Intel builds and tests passed; published artifact hashes verified. The next engineering work is the documented unsupported functionality, not completion of this installer release. Task-owned test images, downloaded verification copies, development build outputs and test application caches have been removed at the user request. The small source checkout is preserved; supplied Recoverit files and unrelated user files were not changed.
+1. Qualify raw readers, UAC, destination safety, cancellation and sleep/disconnect behavior on disposable physical devices.
+2. Add persistent/paginated result indexing and live result batches before large-media claims.
+3. Expand exFAT interoperability and NameHash/up-case validation, then add independently validated NTFS MFT/runlist and ext4 extent recovery.
+4. Add source-bound resumable acquisition/checkpoint state and evaluate an explicitly packaged optional ddrescue integration.
+5. Expand parser corruption/property/fuzz coverage and automated desktop recovery checks.
+6. Add signed/notarized builds when credentials are available; investigate a narrow privileged helper and APFS separately.

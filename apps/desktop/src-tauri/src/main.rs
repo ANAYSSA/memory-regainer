@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod platform;
+mod power;
 
 use base64::Engine;
 use recovery_core::{Entry, Progress, ScanOptions};
@@ -8,13 +9,13 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Read, Write},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Manager, State};
 
@@ -59,6 +60,15 @@ struct JobStatus {
     source_id: String,
     status: String,
     progress: Progress,
+    stage: String,
+    #[serde(rename = "elapsedSeconds")]
+    elapsed_seconds: f64,
+    #[serde(rename = "progressDeterminate")]
+    progress_determinate: bool,
+    #[serde(rename = "sleepInhibited")]
+    sleep_inhibited: bool,
+    #[serde(rename = "sleepInhibitionError")]
+    sleep_inhibition_error: Option<String>,
     entries: Vec<Entry>,
     warnings: Vec<String>,
     error: Option<String>,
@@ -69,6 +79,7 @@ struct Job {
     source: RegisteredSource,
     options: ScanOptions,
     cancel: Arc<AtomicBool>,
+    started: Instant,
 }
 #[derive(Clone, Default)]
 struct AppState {
@@ -119,11 +130,17 @@ fn lock<T>(m: &Mutex<T>) -> ApiResult<std::sync::MutexGuard<'_, T>> {
         .map_err(|_| "Application state unavailable; restart the application".into())
 }
 fn fingerprint(source: &Source) -> ApiResult<String> {
-    let mut file = File::open(&source.path).map_err(|e| format!("Cannot read source: {e}"))?;
-    let meta = file.metadata().map_err(|e| e.to_string())?;
+    let mut reader = recovery_core::SourceReader::open(Path::new(&source.path), Some(source.size))
+        .map_err(|e| format!("Cannot open source: {e}"))?;
+    if reader.len() != source.size {
+        return Err(
+            "Source capacity changed since selection. Refresh the source list and rescan.".into(),
+        );
+    }
     let mut h = Sha256::new();
     h.update(source.size.to_le_bytes());
     if source.kind == "image" {
+        let meta = fs::metadata(&source.path).map_err(|e| e.to_string())?;
         if !meta.is_file() || meta.len() != source.size {
             return Err("Source size or type changed".into());
         }
@@ -136,13 +153,15 @@ fn fingerprint(source: &Source) -> ApiResult<String> {
                 .to_le_bytes(),
         );
     }
-    let mut buf = vec![0; 65536];
-    let n = file.read(&mut buf).map_err(|e| e.to_string())?;
-    h.update(&buf[..n]);
+    let mut buf = vec![0; source.size.min(65536) as usize];
+    reader
+        .read_at(0, &mut buf)
+        .map_err(|e| format!("Cannot read source fingerprint: {e}"))?;
+    h.update(&buf);
     if source.size > 65536 {
-        file.seek(SeekFrom::Start(source.size - 65536))
-            .map_err(|e| e.to_string())?;
-        file.read_exact(&mut buf).map_err(|e| e.to_string())?;
+        reader
+            .read_at(source.size - 65536, &mut buf)
+            .map_err(|e| format!("Cannot read source fingerprint: {e}"))?;
         h.update(&buf);
     }
     Ok(format!("{:x}", h.finalize()))
@@ -250,7 +269,13 @@ fn begin(
                         scanned: 0,
                         total,
                         found: 0,
+                        ..Default::default()
                     },
+                    stage: "preparing".into(),
+                    elapsed_seconds: 0.0,
+                    progress_determinate: false,
+                    sleep_inhibited: false,
+                    sleep_inhibition_error: None,
                     entries: Vec::new(),
                     warnings: Vec::new(),
                     error: None,
@@ -258,6 +283,7 @@ fn begin(
                 },
                 source,
                 options,
+                started: Instant::now(),
                 cancel: cancel.clone(),
             },
         )
@@ -280,6 +306,11 @@ fn finish(state: &AppState, key: &str, result: ApiResult<()>, cancel: &AtomicBoo
             }
             .into();
             job.view.error = result.err();
+            job.view.elapsed_seconds = job.started.elapsed().as_secs_f64();
+            job.view.sleep_inhibited = false;
+            if job.view.status == "completed" {
+                job.view.stage = "finished".into();
+            }
         }
     }
     state.busy.store(false, Ordering::SeqCst);
@@ -287,9 +318,47 @@ fn finish(state: &AppState, key: &str, result: ApiResult<()>, cancel: &AtomicBoo
 fn update(state: &AppState, key: &str, p: Progress) {
     if let Ok(mut jobs) = lock(&state.jobs) {
         if let Some(job) = jobs.get_mut(key) {
+            if !p.stage.is_empty() {
+                job.view.stage = p.stage.clone();
+                job.view.progress_determinate = !p.indeterminate && p.total > 0;
+            }
             job.view.progress = p;
         }
     }
+}
+fn set_stage(state: &AppState, key: &str, stage: &str, determinate: bool) {
+    if let Ok(mut jobs) = lock(&state.jobs) {
+        if let Some(job) = jobs.get_mut(key) {
+            job.view.stage = stage.into();
+            job.view.progress_determinate = determinate;
+        }
+    }
+}
+fn spawn_job(
+    state: AppState,
+    key: String,
+    cancel: Arc<AtomicBool>,
+    work: impl FnOnce(&AppState, &str, &AtomicBool) -> ApiResult<()> + Send + 'static,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let protection = power::SleepGuard::acquire();
+        if let Ok(mut jobs) = lock(&state.jobs) {
+            if let Some(job) = jobs.get_mut(&key) {
+                job.view.sleep_inhibited = protection.is_ok();
+                job.view.sleep_inhibition_error = protection.as_ref().err().cloned();
+            }
+        }
+        // Always release power protection and the busy slot, including a parser
+        // panic. A native device read can still wait for the OS driver's timeout.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            if cancel.load(Ordering::Relaxed) {
+                return Err("Operation cancelled".into());
+            }
+            work(&state, &key, &cancel)
+        })).unwrap_or_else(|_| Err("The operation stopped after an internal error. Restart the application and report this issue.".into()));
+        drop(protection);
+        finish(&state, &key, result, &cancel);
+    })
 }
 #[tauri::command]
 async fn start_scan(
@@ -322,7 +391,6 @@ fn scan_start(state: AppState, source_id: String, mut options: ScanOptions) -> A
     if !source.source.accessible {
         return Err("The OS denied source access. Create an image with an authorized tool or select another source.".into());
     }
-    source.stamp = fingerprint(&source.source)?;
     let start = options.start.unwrap_or(0);
     let end = options.end.unwrap_or(source.source.size);
     if start >= end || end > source.source.size {
@@ -331,29 +399,37 @@ fn scan_start(state: AppState, source_id: String, mut options: ScanOptions) -> A
     options.end = Some(end);
     let (key, cancel) = begin(&state, source.clone(), options.clone(), end - start)?;
     let job_id = key.clone();
-    std::thread::spawn(move || {
-        let result = (|| {
-            let result =
-                recovery_core::scan(Path::new(&source.source.path), &options, &cancel, |p| {
-                    update(&state, &key, p)
-                })
-                .map_err(|e| e.to_string())?;
-            verify_source(&source)?;
-            let mut jobs = lock(&state.jobs)?;
-            let job = jobs.get_mut(&key).ok_or("Job lost")?;
-            job.view.entries = result.entries;
-            job.view.warnings = result.warnings;
-            job.view.warnings.extend(result.partitions.iter().map(|p| {
-                format!(
-                    "{}: {} · offset {} · {} bytes",
-                    p.name, p.filesystem, p.offset, p.size
-                )
-            }));
-            job.view.progress.scanned = result.bytes_scanned;
-            job.view.progress.found = job.view.entries.len();
-            Ok(())
-        })();
-        finish(&state, &key, result, &cancel);
+    spawn_job(state, key, cancel, move |state, key, cancel| {
+        set_stage(state, key, "opening-source", false);
+        source.stamp = fingerprint(&source.source)?;
+        lock(&state.jobs)?
+            .get_mut(key)
+            .ok_or("Job lost")?
+            .source
+            .stamp = source.stamp.clone();
+        let result = recovery_core::scan_with_size(
+            Path::new(&source.source.path),
+            &options,
+            Some(source.source.size),
+            cancel,
+            |p| update(state, key, p),
+        )
+        .map_err(|e| e.to_string())?;
+        set_stage(state, key, "verifying", false);
+        verify_source(&source)?;
+        let mut jobs = lock(&state.jobs)?;
+        let job = jobs.get_mut(key).ok_or("Job lost")?;
+        job.view.entries = result.entries;
+        job.view.warnings = result.warnings;
+        job.view.warnings.extend(result.partitions.iter().map(|p| {
+            format!(
+                "{}: {} · offset {} · {} bytes",
+                p.name, p.filesystem, p.offset, p.size
+            )
+        }));
+        job.view.progress.scanned = result.bytes_scanned;
+        job.view.progress.found = job.view.entries.len();
+        Ok(())
     });
     Ok(job_id)
 }
@@ -361,7 +437,17 @@ fn scan_start(state: AppState, source_id: String, mut options: ScanOptions) -> A
 fn job_status(state: State<'_, AppState>, job_id: String) -> ApiResult<JobStatus> {
     lock(&state.jobs)?
         .get(&job_id)
-        .map(|j| j.view.clone())
+        .map(|j| {
+            let mut view = j.view.clone();
+            if view.status == "running" {
+                view.elapsed_seconds = j.started.elapsed().as_secs_f64();
+                if j.cancel.load(Ordering::Relaxed) {
+                    view.stage = "cancelling".into();
+                    view.progress_determinate = false;
+                }
+            }
+            view
+        })
         .ok_or("Unknown job".into())
 }
 #[tauri::command]
@@ -400,8 +486,13 @@ async fn preview(
 ) -> ApiResult<Preview> {
     let (source, entry) = entry_for(&state, &job_id, &entry_id)?;
     verify_source(&source)?;
-    let bytes = recovery_core::read_entry(Path::new(&source.source.path), &entry, 1024 * 1024)
-        .map_err(|e| e.to_string())?;
+    let bytes = recovery_core::read_entry_with_size(
+        Path::new(&source.source.path),
+        &entry,
+        1024 * 1024,
+        Some(source.source.size),
+    )
+    .map_err(|e| e.to_string())?;
     let hex = bytes
         .iter()
         .take(1024)
@@ -518,8 +609,14 @@ impl Write for HashWriter<'_> {
         self.file.flush()
     }
 }
-fn hash_file(path: &Path, cancel: &AtomicBool) -> ApiResult<String> {
+fn hash_file_with_progress(
+    path: &Path,
+    cancel: &AtomicBool,
+    mut progress: impl FnMut(u64, u64),
+) -> ApiResult<String> {
     let mut f = File::open(path).map_err(|e| e.to_string())?;
+    let total = f.metadata().map_err(|e| e.to_string())?.len();
+    let mut read = 0;
     let mut h = Sha256::new();
     let mut buf = vec![0; 1024 * 1024];
     loop {
@@ -531,15 +628,28 @@ fn hash_file(path: &Path, cancel: &AtomicBool) -> ApiResult<String> {
             break;
         }
         h.update(&buf[..n]);
+        read += n as u64;
+        progress(read, total);
     }
     Ok(format!("{:x}", h.finalize()))
 }
+#[cfg(test)]
 fn copy_entry(
     source: &Source,
     entry: &Entry,
     dir: &Path,
     index: usize,
     cancel: &AtomicBool,
+) -> ApiResult<(String, u64, String)> {
+    copy_entry_with_progress(source, entry, dir, index, cancel, |_, _, _| {})
+}
+fn copy_entry_with_progress(
+    source: &Source,
+    entry: &Entry,
+    dir: &Path,
+    index: usize,
+    cancel: &AtomicBool,
+    mut progress: impl FnMut(&str, u64, u64),
 ) -> ApiResult<(String, u64, String)> {
     let name = format!("{:06}_{}", index + 1, safe_name(&entry.name));
     let tmp = dir.join(format!(".{index}.partial"));
@@ -554,15 +664,25 @@ fn copy_entry(
             file: &mut f,
             hash: Sha256::new(),
         };
-        let n = recovery_core::recover_entry(Path::new(&source.path), entry, &mut writer, cancel)
-            .map_err(|e| e.to_string())?;
+        let n = recovery_core::recover_entry_with_progress_and_size(
+            Path::new(&source.path),
+            entry,
+            &mut writer,
+            cancel,
+            Some(source.size),
+            |n, total| progress("recovering", n, total),
+        )
+        .map_err(|e| e.to_string())?;
         let expected = format!("{:x}", writer.hash.finalize());
         f.sync_all().map_err(|e| e.to_string())?;
         drop(f);
         if n != entry.size {
             return Err("Incomplete reconstruction".into());
         }
-        if hash_file(&tmp, cancel)? != expected {
+        progress("verifying", 0, entry.size);
+        if hash_file_with_progress(&tmp, cancel, |n, total| progress("verifying", n, total))?
+            != expected
+        {
             return Err("Read-back SHA-256 verification failed".into());
         }
         fs::rename(&tmp, &target).map_err(|e| e.to_string())?;
@@ -602,19 +722,16 @@ async fn recover(
         }
         (job.source.clone(), job.options.clone(), entries)
     };
-    verify_source(&source)?;
     let dest = PathBuf::from(destination)
         .canonicalize()
         .map_err(|e| e.to_string())?;
     if !lock(&state.destinations)?.contains(&dest) {
         return Err("Choose the destination through the native folder dialog".into());
     }
-    platform::ensure_separate_device(&source.source, &dest)?;
     let total = entries
         .iter()
         .try_fold(0u64, |sum, e| sum.checked_add(e.size))
         .ok_or("Selected size overflows")?;
-    platform::check_free_space(&dest, total)?;
     let (key, cancel) = begin(
         &state,
         source.clone(),
@@ -626,87 +743,112 @@ async fn recover(
     )?;
     let job_id = key.clone();
     let state = state.inner().clone();
-    std::thread::spawn(move || {
-        let result = (|| {
-            let dir = dest.join(format!("Memory-Regainer-{key}"));
-            private_directory(&dir)?;
-            let mut report = RecoveryReport {
-                recovered: 0,
-                failed: 0,
-                bytes: 0,
-                destination: dir.to_string_lossy().into_owned(),
-                files: Vec::new(),
-            };
-            let mut processed = 0;
-            for (index, entry) in entries.iter().enumerate() {
-                if cancel.load(Ordering::Relaxed) {
-                    break;
-                }
-                if let Err(error) = verify_source(&source) {
-                    for pending in &entries[index..] {
-                        report.failed += 1;
-                        report.files.push(FileReport {
-                            name: pending.name.clone(),
-                            status: "not-recovered".into(),
-                            sha256: String::new(),
-                            error: Some(error.clone()),
-                        });
-                    }
-                    break;
-                }
-                match copy_entry(&source.source, entry, &dir, index, &cancel) {
-                    Ok((name, n, sha256)) => {
-                        report.recovered += 1;
-                        report.bytes += n;
-                        report.files.push(FileReport {
-                            name,
-                            status: "verified-copy".into(),
-                            sha256,
-                            error: None,
-                        });
-                    }
-                    Err(e) => {
-                        report.failed += 1;
-                        report.files.push(FileReport {
-                            name: entry.name.clone(),
-                            status: "failed".into(),
-                            sha256: String::new(),
-                            error: Some(e),
-                        });
-                    }
-                }
-                processed += entry.size;
-                update(
-                    &state,
-                    &key,
-                    Progress {
-                        scanned: processed,
-                        total,
-                        found: report.recovered,
-                    },
-                );
+    spawn_job(state, key, cancel, move |state, key, cancel| {
+        set_stage(state, key, "opening-source", false);
+        verify_source(&source)?;
+        platform::ensure_separate_device(&source.source, &dest)?;
+        platform::check_free_space(&dest, total)?;
+        let dir = dest.join(format!("Memory-Regainer-{key}"));
+        private_directory(&dir)?;
+        let mut report = RecoveryReport {
+            recovered: 0,
+            failed: 0,
+            bytes: 0,
+            destination: dir.to_string_lossy().into_owned(),
+            files: Vec::new(),
+        };
+        let mut processed = 0;
+        for (index, entry) in entries.iter().enumerate() {
+            if cancel.load(Ordering::Relaxed) {
+                break;
             }
-            let unattempted = entries.len() - report.files.len();
-            if unattempted > 0 {
-                report.failed += unattempted;
+            if let Err(error) = verify_source(&source) {
+                for pending in &entries[index..] {
+                    report.failed += 1;
+                    report.files.push(FileReport {
+                        name: pending.name.clone(),
+                        status: "not-recovered".into(),
+                        sha256: String::new(),
+                        error: Some(error.clone()),
+                    });
+                }
+                break;
             }
-            let bytes = serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?;
-            let failed = report.failed;
-            lock(&state.jobs)?
-                .get_mut(&key)
-                .ok_or("Job lost")?
-                .view
-                .report = Some(report);
-            fs::write(dir.join("recovery-report.json"), bytes)
-                .map_err(|e| format!("Files processed but report could not be saved: {e}"))?;
-            if failed > 0 && !cancel.load(Ordering::Relaxed) {
-                return Err(format!(
-                    "{failed} files could not be recovered; see the report"
-                ));
+            match copy_entry_with_progress(
+                &source.source,
+                entry,
+                &dir,
+                index,
+                cancel,
+                |stage, n, _| {
+                    update(
+                        state,
+                        key,
+                        Progress {
+                            scanned: processed + if stage == "recovering" { n } else { entry.size },
+                            total,
+                            found: report.recovered,
+                            stage: stage.into(),
+                            indeterminate: stage == "verifying",
+                            ..Default::default()
+                        },
+                    );
+                },
+            ) {
+                Ok((name, n, sha256)) => {
+                    report.recovered += 1;
+                    report.bytes += n;
+                    report.files.push(FileReport {
+                        name,
+                        status: "verified-copy".into(),
+                        sha256,
+                        error: None,
+                    });
+                }
+                Err(e) => {
+                    report.failed += 1;
+                    report.files.push(FileReport {
+                        name: entry.name.clone(),
+                        status: "failed".into(),
+                        sha256: String::new(),
+                        error: Some(e),
+                    });
+                }
             }
-            Ok(())
-        })();
-        finish(&state, &key, result, &cancel);
+            processed += entry.size;
+            update(
+                state,
+                key,
+                Progress {
+                    scanned: processed,
+                    total,
+                    found: report.recovered,
+                    stage: "recovering".into(),
+                    indeterminate: false,
+                    ..Default::default()
+                },
+            );
+        }
+        let unattempted = entries.len() - report.files.len();
+        if unattempted > 0 {
+            report.failed += unattempted;
+        }
+        set_stage(state, key, "writing-report", false);
+        let bytes = serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?;
+        let failed = report.failed;
+        lock(&state.jobs)?
+            .get_mut(key)
+            .ok_or("Job lost")?
+            .view
+            .report = Some(report);
+        fs::write(dir.join("recovery-report.json"), bytes)
+            .map_err(|e| format!("Files processed but report could not be saved: {e}"))?;
+        if failed > 0 && !cancel.load(Ordering::Relaxed) {
+            return Err(format!(
+                "{failed} files could not be recovered; see the report"
+            ));
+        }
+        Ok(())
     });
     Ok(job_id)
 }
@@ -745,12 +887,10 @@ async fn create_image(
         .get(&source_id)
         .cloned()
         .ok_or("Select a source")?;
-    source.stamp = fingerprint(&source.source)?;
     let dest = PathBuf::from(destination);
     if !lock(&state.image_destinations)?.contains(&dest) {
         return Err("Choose a new file using the save dialog".into());
     }
-    platform::ensure_separate_device(&source.source, dest.parent().ok_or("No parent directory")?)?;
     let options = ScanOptions {
         mode: "image".into(),
         start: None,
@@ -758,113 +898,141 @@ async fn create_image(
         types: Vec::new(),
     };
     let total = source.source.size;
-    platform::check_free_space(dest.parent().ok_or("No destination parent")?, total)?;
     let (key, cancel) = begin(&state, source.clone(), options, total)?;
     let job_id = key.clone();
     let state = state.inner().clone();
-    std::thread::spawn(move || {
-        let result = (|| {
-            let mut input = File::open(&source.source.path).map_err(|e| e.to_string())?;
-            let mut output = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&dest)
+    spawn_job(state, key, cancel, move |state, key, cancel| {
+        set_stage(state, key, "opening-source", false);
+        source.stamp = fingerprint(&source.source)?;
+        lock(&state.jobs)?
+            .get_mut(key)
+            .ok_or("Job lost")?
+            .source
+            .stamp = source.stamp.clone();
+        platform::ensure_separate_device(
+            &source.source,
+            dest.parent().ok_or("No parent directory")?,
+        )?;
+        platform::check_free_space(dest.parent().ok_or("No destination parent")?, total)?;
+        let mut input =
+            recovery_core::SourceReader::open(Path::new(&source.source.path), Some(total))
                 .map_err(|e| e.to_string())?;
-            let mut buf = vec![0; 1024 * 1024];
-            let mut hash = Sha256::new();
-            let mut copied = 0;
-            let acquisition = (|| {
-                while copied < total {
-                    if cancel.load(Ordering::Relaxed) {
-                        return Err(
-                            "Acquisition cancelled. Partial image retained with failure report."
-                                .to_owned(),
-                        );
-                    }
-                    let count = (total - copied).min(buf.len() as u64) as usize;
-                    input.read_exact(&mut buf[..count]).map_err(|e|format!("Read failed at byte {copied}: {e}. Acquisition stopped without retries; consider professional help for failing hardware."))?;
-                    output.write_all(&buf[..count]).map_err(|e| e.to_string())?;
-                    hash.update(&buf[..count]);
-                    copied += count as u64;
-                    update(
-                        &state,
-                        &key,
-                        Progress {
-                            scanned: copied,
-                            total,
-                            found: 0,
-                        },
+        let mut output = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&dest)
+            .map_err(|e| e.to_string())?;
+        let mut buf = vec![0; 1024 * 1024];
+        let mut hash = Sha256::new();
+        let mut copied = 0;
+        let acquisition = (|| {
+            while copied < total {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(
+                        "Acquisition cancelled. Partial image retained with failure report."
+                            .to_owned(),
                     );
                 }
-                output.sync_all().map_err(|e| e.to_string())?;
-                verify_source(&source)?;
-                Ok(())
-            })();
-            drop(output);
-            let expected = format!("{:x}", hash.finalize());
-            let verification = if acquisition.is_ok() {
-                hash_file(&dest, &cancel)
-            } else {
-                Err("Acquisition incomplete".into())
-            };
-            let verified = verification
-                .as_ref()
-                .is_ok_and(|actual| actual == &expected);
-            let error = acquisition
-                .err()
-                .or_else(|| verification.err())
-                .or_else(|| {
-                    if verified {
-                        None
-                    } else {
-                        Some("Image hash verification failed".into())
-                    }
-                });
-            let report = RecoveryReport {
-                recovered: usize::from(verified),
-                failed: usize::from(!verified),
-                bytes: copied,
-                destination: dest.to_string_lossy().into_owned(),
-                files: vec![FileReport {
-                    name: dest
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .into_owned(),
-                    status: if verified {
-                        "verified-image"
-                    } else {
-                        "partial-image"
-                    }
-                    .into(),
-                    sha256: expected,
-                    error: error.clone(),
-                }],
-            };
-            let report_path = dest.with_file_name(format!(
-                "{}.{}.report.json",
-                dest.file_name().unwrap_or_default().to_string_lossy(),
-                key
-            ));
-            let mut report_file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(report_path)
-                .map_err(|e| e.to_string())?;
-            report_file
-                .write_all(&serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())?;
-            lock(&state.jobs)?
-                .get_mut(&key)
-                .ok_or("Job lost")?
-                .view
-                .report = Some(report);
-            match error {
-                Some(e) => Err(e),
-                None => Ok(()),
+                let count = (total - copied).min(buf.len() as u64) as usize;
+                input.read_at(copied, &mut buf[..count]).map_err(|e|format!("Read failed at byte {copied}: {e}. Acquisition stopped without retries; consider professional help for failing hardware."))?;
+                output.write_all(&buf[..count]).map_err(|e| e.to_string())?;
+                hash.update(&buf[..count]);
+                copied += count as u64;
+                update(
+                    state,
+                    key,
+                    Progress {
+                        scanned: copied,
+                        total,
+                        found: 0,
+                        stage: "imaging".into(),
+                        indeterminate: false,
+                        ..Default::default()
+                    },
+                );
             }
+            output.sync_all().map_err(|e| e.to_string())?;
+            set_stage(state, key, "verifying", false);
+            verify_source(&source)?;
+            Ok(())
         })();
-        finish(&state, &key, result, &cancel);
+        drop(output);
+        let expected = format!("{:x}", hash.finalize());
+        let verification = if acquisition.is_ok() {
+            hash_file_with_progress(&dest, cancel, |scanned, total| {
+                update(
+                    state,
+                    key,
+                    Progress {
+                        scanned,
+                        total,
+                        found: 0,
+                        stage: "verifying".into(),
+                        indeterminate: false,
+                        ..Default::default()
+                    },
+                );
+            })
+        } else {
+            Err("Acquisition incomplete".into())
+        };
+        let verified = verification
+            .as_ref()
+            .is_ok_and(|actual| actual == &expected);
+        let error = acquisition
+            .err()
+            .or_else(|| verification.err())
+            .or_else(|| {
+                if verified {
+                    None
+                } else {
+                    Some("Image hash verification failed".into())
+                }
+            });
+        let report = RecoveryReport {
+            recovered: usize::from(verified),
+            failed: usize::from(!verified),
+            bytes: copied,
+            destination: dest.to_string_lossy().into_owned(),
+            files: vec![FileReport {
+                name: dest
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned(),
+                status: if verified {
+                    "verified-image"
+                } else {
+                    "partial-image"
+                }
+                .into(),
+                sha256: expected,
+                error: error.clone(),
+            }],
+        };
+        set_stage(state, key, "writing-report", false);
+        let report_path = dest.with_file_name(format!(
+            "{}.{}.report.json",
+            dest.file_name().unwrap_or_default().to_string_lossy(),
+            key
+        ));
+        let mut report_file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(report_path)
+            .map_err(|e| e.to_string())?;
+        report_file
+            .write_all(&serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+        lock(&state.jobs)?
+            .get_mut(key)
+            .ok_or("Job lost")?
+            .view
+            .report = Some(report);
+        match error {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     });
     Ok(job_id)
 }
@@ -1009,6 +1177,80 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn test_source() -> RegisteredSource {
+        RegisteredSource {
+            source: Source {
+                id: "test".into(),
+                name: "Synthetic test".into(),
+                path: "missing-test-image.img".into(),
+                size: 1024,
+                kind: "image".into(),
+                accessible: true,
+                detail: String::new(),
+            },
+            stamp: String::new(),
+        }
+    }
+    #[test]
+    fn job_cleanup_covers_success_failure_cancellation_and_panic() {
+        for outcome in ["completed", "failed", "cancelled", "panic"] {
+            let state = AppState::default();
+            let (key, cancel) = begin(&state, test_source(), ScanOptions::default(), 1024).unwrap();
+            assert!(begin(&state, test_source(), ScanOptions::default(), 1024).is_err());
+            let observer = state.clone();
+            spawn_job(state, key.clone(), cancel, move |state, key, cancel| {
+                let jobs = lock(&state.jobs)?;
+                let view = &jobs.get(key).unwrap().view;
+                assert!(view.sleep_inhibited || view.sleep_inhibition_error.is_some());
+                drop(jobs);
+                match outcome {
+                    "failed" => Err("synthetic read failure".into()),
+                    "cancelled" => {
+                        cancel.store(true, Ordering::Relaxed);
+                        Ok(())
+                    }
+                    "panic" => panic!("synthetic worker panic"),
+                    _ => Ok(()),
+                }
+            })
+            .join()
+            .unwrap();
+            let jobs = observer.jobs.lock().unwrap();
+            let view = &jobs.get(&key).unwrap().view;
+            assert_eq!(
+                view.status,
+                if outcome == "panic" {
+                    "failed"
+                } else {
+                    outcome
+                }
+            );
+            assert!(!view.sleep_inhibited);
+            assert!(view.elapsed_seconds > 0.0);
+            assert!(!observer.busy.load(Ordering::SeqCst));
+        }
+    }
+    #[test]
+    fn scan_returns_a_job_before_opening_the_source() {
+        let state = AppState::default();
+        let source = test_source();
+        state
+            .sources
+            .lock()
+            .unwrap()
+            .insert(source.source.id.clone(), source);
+        let key = scan_start(state.clone(), "test".into(), ScanOptions::default())
+            .expect("source opening belongs to the worker");
+        let deadline = Instant::now() + std::time::Duration::from_secs(5);
+        while state.busy.load(Ordering::SeqCst) && Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let jobs = state.jobs.lock().unwrap();
+        let view = &jobs.get(&key).unwrap().view;
+        assert_eq!(view.status, "failed");
+        assert!(view.error.as_ref().unwrap().contains("Cannot open source"));
+        assert!(!view.sleep_inhibited);
+    }
     #[test]
     fn names_cannot_escape_output_directory() {
         for name in [

@@ -1,0 +1,42 @@
+{
+  "recorded_on": "2026-10-25",
+  "version": "0.1.1",
+  "scope": "Native macOS probes during development; not Windows USB or damaged-media qualification",
+  "raw_reader": {
+    "platform": "macOS arm64",
+    "source": "new disposable 8 MiB all-zero raw image, attached readonly and nomount",
+    "native_device_during_test": "/dev/rdisk6",
+    "detached": true,
+    "probe_command": "cargo run -p recovery-core --example raw_device_probe -- /dev/rdisk6 8388608",
+    "exit_code": 0,
+    "raw_device_verified": true,
+    "sector_size": 512,
+    "quick_read_bytes": 131072,
+    "deep_read_bytes": 8388608,
+    "unaligned_range_read_operations": 3,
+    "unaligned_range_bytes_read": 196608,
+    "files_found": 0,
+    "stages_quick": [
+      "opening-source",
+      "partitions",
+      "metadata",
+      "finished"
+    ],
+    "stages_deep": [
+      "opening-source",
+      "partitions",
+      "metadata",
+      "carving",
+      "finished"
+    ]
+  },
+  "idle_sleep": {
+    "platform": "macOS",
+    "assertionVisibleDuringOperation": true,
+    "assertionAbsentAfterCompletion": true,
+    "processExitCode": 0,
+    "assertion": [
+      "pid 1148(probe): [0x0003d47b0001913f] 00:00:00 PreventUserIdleSystemSleep named: \"Memory Regainer active disk operation\""
+    ]
+  }
+}

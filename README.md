@@ -6,14 +6,14 @@ An independent, offline desktop file-recovery application built with Rust, Tauri
 
 **Early prerelease:** this is a working foundation with deliberately limited recovery coverage. It is not a substitute for a mature forensic suite or professional handling of physically failing storage. Overwritten bytes, SSD TRIM and inaccessible encrypted data cannot be recovered by this software.
 
-**По-русски:** приложение работает локально, поддерживает русский и английский интерфейс. Начните с копии образа диска. Быстрое сканирование ищет удалённые записи FAT и ограниченный набор записей exFAT; глубокое — семь типов сигнатур. Для exFAT поддерживаются целые непрерывные файлы на чистом томе с одной FAT, если bitmap отмечает их кластеры свободными. Восстановление NTFS, ext4 и APFS по метаданным пока не реализовано. Сохраняйте результат на здоровый отдельный носитель.
+The interface supports English and Russian. Quick Scan inspects supported FAT and exFAT deleted records; Deep Scan also searches for seven file signatures. Metadata undelete for NTFS, ext4 and APFS is not implemented. Start with a disk image and save recovered files to separate healthy storage.
 
 [Download EXE / DMG releases](https://github.com/ANAYSSA/memory-regainer/releases) · [Validation evidence](docs/VALIDATION.md)
 
 ## Get started
 
 1. Stop writing to the affected storage. Prefer a raw disk image created on healthy storage.
-2. Open the image in Memory Regainer, or select an accessible physical device. No automatic privilege elevation is performed.
+2. Open the image in Memory Regainer, or select an accessible physical device. Starting with v0.1.1, Windows requests administrator access through the standard UAC prompt at application launch. macOS permissions remain controlled by the OS.
 3. Choose **Quick Scan** for supported FAT/exFAT deleted directory records or **Deep Scan** for the implemented file signatures. **Advanced Scan** adds an explicit byte range.
 4. Review evidence, notes and previews. Results are populated from actual source bytes; counts alone do not establish successful recovery.
 5. Select files and choose a healthy destination. The app writes into a new recovery folder and verifies copied bytes using SHA-256 read-back.
@@ -21,7 +21,7 @@ An independent, offline desktop file-recovery application built with Rust, Tauri
 
 The application is designed for Windows 10/11 x64 and macOS Apple Silicon / Intel. Native installer builds and automated tests are defined in [GitHub Actions](.github/workflows/release.yml). Build completion, interactive installer testing and raw-device qualification are different checks: see [validation](docs/VALIDATION.md) for actual evidence. Linux source support is secondary and has no packaged release in this milestone. Windows ARM64 is not qualified.
 
-Windows requires the Microsoft WebView2 runtime; the installer can obtain it if absent. Recovery itself works offline.
+Windows requires the Microsoft WebView2 runtime; the installer can obtain it if absent. Recovery itself works offline. The v0.1.1 Windows application manifest requests administrator access for raw-device reads; this elevates the whole application, including image-only work. No access-control bypass is provided.
 
 Unsigned installers can trigger Windows SmartScreen or macOS Gatekeeper. macOS builds are not Developer ID signed or notarized. Do not bypass security prompts for a build you have not chosen to trust; compare its SHA-256 checksum and source revision.
 
@@ -40,9 +40,11 @@ Unsigned installers can trigger Windows SmartScreen or macOS Gatekeeper. macOS b
 | Imaging | Sequential raw image acquisition, cancellation, first-read-error stop, SHA-256 read-back and acquisition report |
 | Sessions | Export scan metadata; reopen an image session by validating its source fingerprint and running the scan again |
 
-Results are delivered after a scan completes; progress counters update during scanning. Interrupted scan checkpoints and pause/resume are not implemented. The result index is held in memory, so extremely large result sets remain a scaling limit despite a virtualized UI. No multi-terabyte throughput or maximum-memory claim is made.
+Results are delivered after a scan completes. v0.1.1 adds explicit preparation, metadata, carving, verification and cancellation stages, elapsed time, measured transfer rates and an estimate only when enough progress samples exist. Metadata traversal and device opening can have no meaningful percentage. Progress describes actual work; it is not a recovery-success percentage. Interrupted scan checkpoints and pause/resume are not implemented. The result index is held in memory, so extremely large result sets remain a scaling limit despite a virtualized UI. No multi-terabyte throughput or maximum-memory claim is made.
 
-Read the full [feature matrix and limits](docs/FEATURES.md), [safety notes](docs/SAFETY.md) and [implementation progress](PROGRESS.md).
+While a scan, recovery or image acquisition is active, v0.1.1 requests protection from automatic idle system sleep on Windows and macOS and shows whether the request succeeded. The display may dim. Manual sleep, lid closure, shutdown, disconnection and battery loss can still interrupt work. Cancellation is cooperative: a blocked device read may delay completion. There are no resumable scan checkpoints. See [validation](docs/VALIDATION.md) for executed checks; real damaged-device and sleep/wake qualification remains outstanding.
+
+Read the full [feature matrix and limits](docs/FEATURES.md), [safety notes](docs/SAFETY.md), [implementation progress](PROGRESS.md) and [recovery architecture research](docs/RECOVERY_IO_RESEARCH.md).
 
 ## Build from source
 

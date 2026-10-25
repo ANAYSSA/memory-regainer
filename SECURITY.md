@@ -14,7 +14,7 @@ Include the exact commit or release, platform, affected parser/operation, reprod
 
 - Source files and devices are opened read-only. There is no partition repair or source-disk write command.
 - Recovery destinations are validated, outputs use collision-resistant handling, and existing source files must never be overwritten.
-- Raw-device access depends on existing OS authorization. The app does not silently elevate privileges, bypass encryption, TCC, SIP or disk locks.
+- Raw-device access depends on OS authorization. Starting with v0.1.1, the Windows application manifest requests administrator access through the standard UAC prompt, elevating the whole application. There is no silent elevation or bypass of encryption, TCC, SIP or disk locks.
 - Previews do not execute files, scripts or embedded document macros. Do not open recovered executables merely because recovery succeeded.
 - A SHA-256 match between read bytes and written bytes checks copy integrity. It does not establish that those bytes are the original pre-deletion content, safe to execute, or a complete valid file.
 

@@ -180,15 +180,15 @@ fn png(
 }
 
 // A buffered byte cursor avoids one OS read for every JPEG entropy byte.
-struct Cursor<'a> {
-    source: &'a mut Source,
+struct Cursor<'a, 'b> {
+    source: &'a mut Source<'b>,
     pos: u64,
     end: u64,
     buffer: Vec<u8>,
     index: usize,
 }
-impl<'a> Cursor<'a> {
-    fn new(source: &'a mut Source, pos: u64, end: u64) -> Self {
+impl<'a, 'b> Cursor<'a, 'b> {
+    fn new(source: &'a mut Source<'b>, pos: u64, end: u64) -> Self {
         Self {
             source,
             pos,

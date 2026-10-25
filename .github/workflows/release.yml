@@ -52,9 +52,17 @@ jobs:
         run: npm run build
       - name: Recovery and backend tests
         run: cargo test --workspace --locked --target ${{ matrix.target }}
+      - name: Windows raw disk regression on a read-only scratch VHD
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/windows_raw_device_test.ps1
       - name: Build native installer
         working-directory: apps/desktop
         run: npm run tauri -- build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Verify application administrator manifest
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/verify_windows_manifest.ps1 -Executable target/${{ matrix.target }}/release/memory-regainer-desktop.exe
       - name: Collect installers and checksums
         run: python scripts/collect_artifacts.py "${{ matrix.target }}" "${{ matrix.artifact }}"
       - uses: actions/upload-artifact@v4

@@ -92,9 +92,22 @@ pub fn sources() -> Result<Vec<Source>, String> {
         } else {
             vec![value]
         };
-        Ok(values.iter().filter_map(|d|{
-            let n=d["Number"].as_u64()?; let path=format!(r"\\.\PhysicalDrive{n}");
-            Some(Source{id:format!("device:{n}"),name:d["FriendlyName"].as_str().unwrap_or("Physical drive").into(),accessible:File::open(&path).is_ok(),path,size:d["Size"].as_u64().unwrap_or(0),kind:"device".into(),detail:"Read-only device. Administrator permission may be required. No automatic elevation.".into()})
+        Ok(values.iter().filter_map(|d| {
+            let n = d["Number"].as_u64()?;
+            let path = format!(r"\\.\PhysicalDrive{n}");
+            let access = File::open(&path);
+            let detail = match &access {
+                Ok(_) => "Read-only physical disk. Windows administrator permission granted.".into(),
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => format!("Windows denied access: {e}. Accept the administrator prompt when opening Memory Regainer. Security software or policy may also restrict this disk."),
+                Err(e) => format!("Cannot open physical disk: {e}. Reconnect the device and refresh the source list."),
+            };
+            Some(Source {
+                id: format!("device:{n}"),
+                name: d["FriendlyName"].as_str().unwrap_or("Physical drive").into(),
+                accessible: access.is_ok(), path,
+                size: d["Size"].as_u64().unwrap_or(0),
+                kind: "device".into(), detail,
+            })
         }).collect())
     }
     #[cfg(target_os = "linux")]

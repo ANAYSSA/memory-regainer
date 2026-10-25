@@ -4,11 +4,14 @@ mod carve;
 mod exfat;
 mod fat;
 mod partition;
+mod progress;
+mod reader;
+pub use reader::SourceReader;
 
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::File,
-    io::{Read, Seek, SeekFrom, Write},
+    cell::RefCell,
+    io::Write,
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
 };
@@ -64,6 +67,33 @@ pub struct Progress {
     pub scanned: u64,
     pub total: u64,
     pub found: usize,
+    #[serde(default = "default_stage")]
+    pub stage: String,
+    #[serde(default = "default_indeterminate")]
+    pub indeterminate: bool,
+    #[serde(default)]
+    pub bytes_read: u64,
+    #[serde(default)]
+    pub current_offset: Option<u64>,
+}
+fn default_stage() -> String {
+    "opening-source".into()
+}
+fn default_indeterminate() -> bool {
+    true
+}
+impl Default for Progress {
+    fn default() -> Self {
+        Self {
+            scanned: 0,
+            total: 0,
+            found: 0,
+            stage: default_stage(),
+            indeterminate: true,
+            bytes_read: 0,
+            current_offset: None,
+        }
+    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Partition {
@@ -81,47 +111,33 @@ pub struct ScanResult {
     pub bytes_scanned: u64,
 }
 
-pub(crate) struct Source {
-    file: File,
+type ReadObserver<'a> = Box<dyn FnMut(u64, Option<u64>) -> Result<()> + 'a>;
+
+pub(crate) struct Source<'a> {
+    reader: SourceReader,
     pub len: u64,
     lower_bound: u64,
+    observer: Option<ReadObserver<'a>>,
 }
-impl Source {
-    fn open(path: &Path) -> Result<Self> {
-        let mut file = File::open(path)?;
-        let metadata = file.metadata()?;
-        let len = metadata.len();
-        // Raw device sizes may be supplied by native enumeration. The scanner
-        // requires an explicit end in that case; read_exact still detects short reads.
-        let len = if len == 0 && !metadata.is_file() {
-            file.seek(SeekFrom::End(0))
-                .ok()
-                .filter(|n| *n > 0)
-                .unwrap_or(u64::MAX)
-        } else {
-            len
-        };
-        if len == 0 {
-            return Err(Error::Invalid("Source is empty".into()));
-        }
+impl<'a> Source<'a> {
+    fn open_with_size(path: &Path, size_hint: Option<u64>) -> Result<Self> {
+        let reader = SourceReader::open(path, size_hint)?;
         Ok(Self {
-            file,
-            len,
+            len: reader.len(),
+            reader,
             lower_bound: 0,
+            observer: None,
         })
     }
     pub(crate) fn read(&mut self, offset: u64, buf: &mut [u8]) -> Result<()> {
-        let end = offset
-            .checked_add(buf.len() as u64)
-            .ok_or_else(|| Error::Invalid("Read range overflow".into()))?;
-        if offset < self.lower_bound || end > self.len {
-            return Err(Error::Invalid(format!(
-                "Read beyond source at byte {offset}"
-            )));
-        }
-        self.file.seek(SeekFrom::Start(offset))?;
-        self.file.read_exact(buf)?;
-        Ok(())
+        self.reader.set_bounds(self.lower_bound, self.len)?;
+        let observer = &mut self.observer;
+        self.reader.read_observed(offset, buf, |bytes, offset| {
+            if let Some(observer) = observer {
+                observer(bytes, offset)?;
+            }
+            Ok(())
+        })
     }
     pub(crate) fn bytes(&mut self, offset: u64, count: usize) -> Result<Vec<u8>> {
         if count > 1024 * 1024 {
@@ -155,24 +171,33 @@ pub fn scan(
     path: &Path,
     options: &ScanOptions,
     cancel: &AtomicBool,
+    on_progress: impl FnMut(Progress),
+) -> Result<ScanResult> {
+    scan_with_size(path, options, None, cancel, on_progress)
+}
+
+/// Scan with an enumerated full-device capacity fallback. A selected range end
+/// is not a device capacity; native geometry remains authoritative when available.
+pub fn scan_with_size(
+    path: &Path,
+    options: &ScanOptions,
+    size_hint: Option<u64>,
+    cancel: &AtomicBool,
     mut on_progress: impl FnMut(Progress),
 ) -> Result<ScanResult> {
     check_cancel(cancel)?;
     if !["quick", "deep", "advanced"].contains(&options.mode.as_str()) {
         return Err(Error::Invalid("Unknown scan mode".into()));
     }
-    let mut source = Source::open(path)?;
-    if source.len == u64::MAX {
-        source.len = options
-            .end
-            .filter(|n| *n > 0 && *n < u64::MAX)
-            .ok_or_else(|| {
-                Error::Invalid(
-                    "Raw source size unavailable; select a known byte range or create an image"
-                        .into(),
-                )
-            })?;
-    }
+    let reporter = RefCell::new(progress::Reporter::new(&mut on_progress));
+    reporter.borrow_mut().stage("opening-source", true, 0, 0, 0);
+    check_cancel(cancel)?;
+    let mut source = Source::open_with_size(path, size_hint)?;
+    source.observer = Some(Box::new(|bytes, offset| {
+        check_cancel(cancel)?;
+        reporter.borrow_mut().io(bytes, offset);
+        check_cancel(cancel)
+    }));
     let start = options.start.unwrap_or(0);
     let end = options.end.unwrap_or(source.len);
     if start >= end || end > source.len {
@@ -180,6 +205,14 @@ pub fn scan(
             "Scan range must be inside the source and have a positive length".into(),
         ));
     }
+    if source.reader.is_raw() {
+        let sector = u64::from(source.reader.sector_size());
+        if !start.is_multiple_of(sector) || !end.is_multiple_of(sector) {
+            return Err(Error::Invalid(format!("Raw scan range must start and end on {sector}-byte sector boundaries; use a disk image for arbitrary byte ranges")));
+        }
+    }
+    reporter.borrow_mut().stage("partitions", true, 0, 0, 0);
+    check_cancel(cancel)?;
     let mut warnings = Vec::new();
     let partial_range = start != 0 || end != source.len;
     let partitions = if partial_range {
@@ -202,11 +235,8 @@ pub fn scan(
     let mut entries = Vec::new();
     let mut scanned = 0u64;
     let total = end - start;
-    on_progress(Progress {
-        scanned: 0,
-        total,
-        found: 0,
-    });
+    reporter.borrow_mut().stage("metadata", true, 0, 0, 0);
+    check_cancel(cancel)?;
     for part in &partitions {
         check_cancel(cancel)?;
         if part.offset < start || part.offset >= end {
@@ -215,11 +245,9 @@ pub fn scan(
         if part.filesystem.starts_with("FAT") || part.filesystem == "exFAT" {
             let mut report = |n, count| {
                 scanned = scanned.saturating_add(n);
-                on_progress(Progress {
-                    scanned: scanned.min(total),
-                    total,
-                    found: entries.len() + count,
-                });
+                reporter
+                    .borrow_mut()
+                    .position(scanned, entries.len() + count);
             };
             let result = if part.filesystem == "exFAT" {
                 exfat::scan_deleted(&mut source, part, cancel, &mut report)
@@ -242,6 +270,10 @@ pub fn scan(
     entries.retain(|e| e.offset >= start && e.offset.checked_add(e.size).is_some_and(|n| n <= end));
     if options.mode != "quick" {
         let base_count = entries.len();
+        reporter
+            .borrow_mut()
+            .stage("carving", false, total, 0, base_count);
+        check_cancel(cancel)?;
         let mut carved = carve::scan(
             &mut source,
             start,
@@ -249,11 +281,7 @@ pub fn scan(
             &options.types,
             cancel,
             |done, found| {
-                on_progress(Progress {
-                    scanned: done,
-                    total,
-                    found: base_count + found,
-                });
+                reporter.borrow_mut().position(done, base_count + found);
             },
         )?;
         carved.retain(|e| {
@@ -272,11 +300,15 @@ pub fn scan(
                 .any(|t| t.eq_ignore_ascii_case(&e.kind))
         });
     }
-    on_progress(Progress {
-        scanned: scanned.min(total),
-        total,
-        found: entries.len(),
-    });
+    check_cancel(cancel)?;
+    reporter.borrow_mut().stage(
+        "finished",
+        false,
+        if options.mode == "quick" { 0 } else { total },
+        scanned.min(total),
+        entries.len(),
+    );
+    check_cancel(cancel)?;
     warnings.sort();
     warnings.dedup();
     Ok(ScanResult {
@@ -314,10 +346,20 @@ fn validated_extents(source: &Source, entry: &Entry) -> Result<()> {
 
 /// Read a bounded prefix for a preview. No recovered content is executed.
 pub fn read_entry(path: &Path, entry: &Entry, max: usize) -> Result<Vec<u8>> {
+    read_entry_with_size(path, entry, max, None)
+}
+
+/// Preview with the same full-device capacity fallback used during scanning.
+pub fn read_entry_with_size(
+    path: &Path,
+    entry: &Entry,
+    max: usize,
+    size_hint: Option<u64>,
+) -> Result<Vec<u8>> {
     if max > 16 * 1024 * 1024 {
         return Err(Error::Invalid("Preview is limited to 16 MiB".into()));
     }
-    let mut source = Source::open(path)?;
+    let mut source = Source::open_with_size(path, size_hint)?;
     validated_extents(&source, entry)?;
     let mut out = Vec::with_capacity((entry.size.min(max as u64)) as usize);
     for extent in &entry.extents {
@@ -340,8 +382,38 @@ pub fn recover_entry(
     writer: &mut impl Write,
     cancel: &AtomicBool,
 ) -> Result<u64> {
-    let mut source = Source::open(path)?;
+    recover_entry_with_progress(path, entry, writer, cancel, |_, _| {})
+}
+
+/// As `recover_entry`, reporting bytes actually written after each bounded chunk.
+/// Cancellation is cooperative between reads/writes; an OS-blocked device read
+/// must first return before its error or cancellation can be reported.
+pub fn recover_entry_with_progress(
+    path: &Path,
+    entry: &Entry,
+    writer: &mut impl Write,
+    cancel: &AtomicBool,
+    on_progress: impl FnMut(u64, u64),
+) -> Result<u64> {
+    recover_entry_with_progress_and_size(path, entry, writer, cancel, None, on_progress)
+}
+
+/// Recovery with the same registered full-device capacity fallback used by scan
+/// and preview. The hint never expands an ordinary image's real metadata bounds.
+pub fn recover_entry_with_progress_and_size(
+    path: &Path,
+    entry: &Entry,
+    writer: &mut impl Write,
+    cancel: &AtomicBool,
+    size_hint: Option<u64>,
+    mut on_progress: impl FnMut(u64, u64),
+) -> Result<u64> {
+    check_cancel(cancel)?;
+    let mut source = Source::open_with_size(path, size_hint)?;
+    source.observer = Some(Box::new(|_, _| check_cancel(cancel)));
     validated_extents(&source, entry)?;
+    on_progress(0, entry.size);
+    check_cancel(cancel)?;
     let mut buf = vec![0u8; 1024 * 1024];
     let mut written = 0;
     for extent in &entry.extents {
@@ -353,6 +425,7 @@ pub fn recover_entry(
             writer.write_all(&buf[..count])?;
             written += count as u64;
             pos += count as u64;
+            on_progress(written, entry.size);
         }
     }
     check_cancel(cancel)?;

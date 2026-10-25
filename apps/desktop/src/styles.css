@@ -18,3 +18,26 @@
 
 .preview-limits { font-size:8px; color:var(--muted); line-height:1.6; padding:0 15px; }
 .cancel-detail { color:var(--warning); font-size:10px; line-height:1.7; margin-top:12px; }
+
+.progress-stage { font-size:12px; color:var(--text); margin:0 0 13px 27px; line-height:1.65; }
+.progress-number { font-size:15px; font-weight:650; color:var(--blue); }
+.progress-details { flex-wrap:wrap; font-size:10px; }
+.progress-timing { display:flex; flex-wrap:wrap; align-items:center; gap:10px 25px; margin-top:14px; padding-top:12px; border-top:1px solid var(--line); font-size:11px; color:var(--muted); }
+.progress-timing>span { display:flex; align-items:center; gap:6px; }
+.progress-timing strong { font-weight:550; color:var(--text); font-variant-numeric:tabular-nums; }
+.progress-health { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px 20px; font-size:9px; color:var(--muted); margin-top:13px; }
+.engine-activity,.sleep-protection { display:inline-flex; align-items:center; gap:6px; }
+.engine-activity i { width:6px; height:6px; border-radius:50%; background:var(--green); box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 10%,transparent); }
+.engine-activity.waiting i { background:var(--warning); box-shadow:0 0 0 3px color-mix(in srgb,var(--warning) 10%,transparent); }
+.sleep-protection { cursor:help; }
+.sleep-protection svg { color:var(--green); }
+.sleep-protection.unavailable,.sleep-protection.unavailable svg { color:var(--warning); }
+.progress-issue { display:flex; align-items:flex-start; gap:10px; margin-top:14px; padding:12px; border:1px solid color-mix(in srgb,var(--warning) 20%,transparent); border-radius:6px; background:var(--warning-bg); color:var(--warning); font-size:10px; line-height:1.7; }
+.progress-issue>svg { flex:none; margin-top:2px; }
+.progress-issue>div { flex:1; min-width:0; }
+.progress-issue strong { font-weight:600; }
+.progress-issue p { margin-top:4px; }
+.technical-detail { overflow-wrap:anywhere; font-size:9px; }
+.progress-help { margin-top:12px; color:var(--muted); font-size:10px; line-height:1.7; }
+.job-progress progress:indeterminate { background:var(--line); }
+@media(max-width:930px) { .progress-timing { font-size:10px; }.progress-title { flex-wrap:wrap; }.progress-stage { margin-left:0; } }
