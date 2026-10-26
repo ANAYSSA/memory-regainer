@@ -1,0 +1,591 @@
+{
+  "schema_version": 1,
+  "release": "0.2.1",
+  "source_commit": "2ae2dccd72e5617e0de7fd9cd38b6a4d5f7958fe",
+  "workflow_run": "https://github.com/ANAYSSA/memory-regainer/actions/runs/40304905869",
+  "workflow_conclusion": "success",
+  "windows_job": "https://github.com/ANAYSSA/memory-regainer/actions/runs/40304905869/job/121511504378",
+  "windows_job_conclusion": "success",
+  "completed_at": "2026-10-26T10:09:52Z",
+  "log_sha256": "2f9fa9d5548bcda98e561efd89af23900e927b178c216a272d4ac900d2606b9f",
+  "scope": "Two freshly created disposable VHDs only: a 32 MiB all-zero physical-device probe, plus a mounted FAT32 volume populated with 42 original clips, two photos and one unique marker. The filesystem was created on the scratch image, then detached and remounted read-only before scanning and recovery. Existing nested files are tested natively; deleted-directory recovery is covered separately by deterministic image tests. No user USB device was inspected.",
+  "windows_rust_tests": {
+    "total_passed": 136,
+    "total_failed": 0,
+    "suites": [
+      {
+        "suite": "unittests src/main.rs",
+        "passed": 18,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "suite": "unittests src/lib.rs",
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "suite": "tests/archives.rs",
+        "passed": 20,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "suite": "tests/exfat.rs",
+        "passed": 18,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "suite": "tests/metadata_tree.rs",
+        "passed": 14,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "suite": "tests/recovery.rs",
+        "passed": 30,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "suite": "tests/video.rs",
+        "passed": 23,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "suite": "recovery_core doctests",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "platform_difference": "Two Unix-only sparse-file cases are not compiled on Windows."
+  },
+  "raw_physical_device": {
+    "legacy_file_metadata_diagnostic": {
+      "message": "Incorrect function. (os error 1)",
+      "ok": false,
+      "os_error": 1
+    },
+    "raw_device_verified": true,
+    "scan_results": [
+      {
+        "actual_read_bytes": 131072,
+        "files_found": 0,
+        "mode": "quick",
+        "stages": [
+          "opening-source",
+          "partitions",
+          "metadata",
+          "finished"
+        ]
+      },
+      {
+        "actual_read_bytes": 33554432,
+        "files_found": 0,
+        "mode": "deep",
+        "stages": [
+          "opening-source",
+          "partitions",
+          "metadata",
+          "carving",
+          "finished"
+        ]
+      }
+    ],
+    "size": 33554432,
+    "transfer_sector_size": 512,
+    "unaligned_range_bytes_read": 196608,
+    "unaligned_range_read_operations": 3
+  },
+  "mounted_fat32_volume": {
+    "boot_filesystem_type": "FAT32   ",
+    "boot_label": "NO NAME    ",
+    "path": "\\\\.\\E:",
+    "raw_volume_verified": true,
+    "root_volume_label": "MRPROBE",
+    "scan_results": [
+      {
+        "bytes_read": 393216,
+        "mode": "quick",
+        "stages": [
+          "opening-source",
+          "partitions",
+          "metadata",
+          "finished"
+        ],
+        "streamed_entries": 46,
+        "verified_files": [
+          {
+            "path": "LIVE/A/CLIP0001.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0002.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0003.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0004.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0005.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0006.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0007.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0008.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0009.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0010.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0011.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0012.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0013.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0014.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0015.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0016.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0017.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0018.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0019.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0020.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0021.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0022.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0023.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0024.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0025.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0026.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0027.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0028.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0029.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0030.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0031.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0032.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0033.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0034.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0035.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0036.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0037.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0038.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0039.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0040.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0041.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0042.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "PHOTOS/PHOTO001.JPG",
+            "sha256": "8f5d588b317879812a062958575cd76af466761fd5e30e809b1d2ed70322b97e",
+            "size": 828
+          },
+          {
+            "path": "PHOTOS/PHOTO002.JPG",
+            "sha256": "8f5d588b317879812a062958575cd76af466761fd5e30e809b1d2ed70322b97e",
+            "size": 828
+          },
+          {
+            "path": "MRPROBE.ID",
+            "sha256": "1edf04df6e13478984956e2aaa561d2905f63d36f76723c7000cf78778dfe198",
+            "size": 67
+          }
+        ]
+      },
+      {
+        "bytes_read": 133824512,
+        "mode": "deep",
+        "stages": [
+          "opening-source",
+          "partitions",
+          "metadata",
+          "carving",
+          "finished"
+        ],
+        "streamed_entries": 46,
+        "verified_files": [
+          {
+            "path": "LIVE/A/CLIP0001.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0002.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0003.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0004.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0005.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0006.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0007.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0008.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0009.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0010.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0011.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0012.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0013.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0014.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0015.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0016.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0017.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0018.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0019.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0020.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/A/CLIP0021.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0022.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0023.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0024.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0025.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0026.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0027.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0028.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0029.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0030.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0031.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0032.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0033.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0034.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0035.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0036.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0037.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0038.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0039.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0040.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0041.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "LIVE/B/CLIP0042.MP4",
+            "sha256": "36d56087bc0a84e65f7b5644b33ed5fdf029d55d59ab3ede4c3eb9ff906733d8",
+            "size": 5879
+          },
+          {
+            "path": "PHOTOS/PHOTO001.JPG",
+            "sha256": "8f5d588b317879812a062958575cd76af466761fd5e30e809b1d2ed70322b97e",
+            "size": 828
+          },
+          {
+            "path": "PHOTOS/PHOTO002.JPG",
+            "sha256": "8f5d588b317879812a062958575cd76af466761fd5e30e809b1d2ed70322b97e",
+            "size": 828
+          },
+          {
+            "path": "MRPROBE.ID",
+            "sha256": "1edf04df6e13478984956e2aaa561d2905f63d36f76723c7000cf78778dfe198",
+            "size": 67
+          }
+        ]
+      }
+    ],
+    "volume_bytes": 133103616
+  }
+}

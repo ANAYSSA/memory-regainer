@@ -833,12 +833,14 @@ fn copy_entry_with_progress(
     if target.exists() {
         return Err("Output file already exists; no files were overwritten".into());
     }
+    let mut created_tmp = false;
     let result = (|| {
         let mut f = OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&tmp)
             .map_err(|e| e.to_string())?;
+        created_tmp = true;
         let mut writer = HashWriter {
             file: &mut f,
             hash: Sha256::new(),
@@ -867,7 +869,7 @@ fn copy_entry_with_progress(
         fs::rename(&tmp, &target).map_err(|e| e.to_string())?;
         Ok((name, n, expected))
     })();
-    if result.is_err() {
+    if result.is_err() && created_tmp {
         let _ = fs::remove_file(&tmp);
     }
     result
@@ -1527,6 +1529,43 @@ mod tests {
         cancel.store(true, Ordering::Relaxed);
         assert!(copy_entry(&source, &e, &out, 2, &cancel).is_err());
         assert!(!out.join(".2.partial").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn failed_temp_creation_preserves_preexisting_files_and_directories() {
+        let root = std::env::temp_dir().join(format!("mr-temp-ownership-{}", id()));
+        private_directory(&root).unwrap();
+        let source_path = root.join("source.img");
+        let payload = b"source content";
+        fs::write(&source_path, payload).unwrap();
+        let source = image_source(source_path.clone()).unwrap();
+        let out = root.join("out");
+        private_directory(&out).unwrap();
+        let entry = Entry {
+            name: "sample.txt".into(),
+            size: payload.len() as u64,
+            extents: vec![recovery_core::Extent {
+                offset: 0,
+                length: payload.len() as u64,
+            }],
+            ..Default::default()
+        };
+        let cancel = AtomicBool::new(false);
+        let existing = out.join(".0.partial");
+        let preserved = b"preexisting destination content";
+        fs::write(&existing, preserved).unwrap();
+        assert!(copy_entry(&source, &entry, &out, 0, &cancel).is_err());
+        assert_eq!(fs::read(&existing).unwrap(), preserved);
+        assert!(!out.join("000001_sample.txt").exists());
+
+        fs::remove_file(&existing).unwrap();
+        private_directory(&existing).unwrap();
+        fs::write(existing.join("keep.txt"), preserved).unwrap();
+        assert!(copy_entry(&source, &entry, &out, 0, &cancel).is_err());
+        assert!(existing.is_dir());
+        assert_eq!(fs::read(existing.join("keep.txt")).unwrap(), preserved);
+        assert!(!out.join("000001_sample.txt").exists());
+        assert_eq!(fs::read(&source_path).unwrap(), payload);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
