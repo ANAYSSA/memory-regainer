@@ -59,7 +59,7 @@ Implemented decimal MB/GB display, clear subsecond timing and metadata-only Quic
 
 Implemented independent contiguous MP4/MOV carving for Deep/Advanced, with container/sample-table and AVC/HEVC configuration framing checks, 64-bit geometry and explicit unsupported cases. Deep is the initial UI mode; MP4/MOV filters and video guidance are available. Six real synthetic clips recover byte-for-byte and decode successfully. Local verification passed 83 Rust and 40 frontend tests, strict Clippy, formatting, build/lint and dependency inventory. All three tagged native builds, source verification, publication and downloaded-asset verification passed. The published source archive matched all 1,260 tagged files. Task-owned temporary/build files were cleaned; original user files and project source were preserved. See [v0.1.3 release evidence](docs/release-v0.1.3.json).
 
-## Current update: v0.2.0
+## v0.2.0
 
 - [x] Stream accepted scan results through a separate paged API; retain candidates after cancellation and independently manage recovery jobs.
 - [x] Add location/type trees, path/status filters, sorting and safe hierarchy-preserving output.
@@ -73,3 +73,14 @@ Implemented independent contiguous MP4/MOV carving for Deep/Advanced, with conta
 - [ ] Clean task-owned scratch/build outputs after publication.
 
 These changes improve observable progress and tested format coverage. They do not establish a physical USB throughput guarantee, arbitrary video repair or a recovery success rate. See [archive validation](docs/ARCHIVE_RECOVERY_VALIDATION.md) for bounds and the local dispatch benchmark.
+
+## Current update: v0.2.1
+
+- [x] Validate FAT/exFAT directory candidates before reserving visited clusters, so stale references do not suppress valid ancestry.
+- [x] Recognize narrowly corroborated E5-erased FAT special names; keep allocation, parent-pointer and bounded-read checks.
+- [x] Preserve available basenames and metadata hierarchy; rename only actual output collisions.
+- [x] Automatically enumerate drives on startup and retry/focus transitions, with independent loading/error state.
+- [x] Add nested Unicode deletion, stale-alias, destination-name and source-discovery regressions.
+- [ ] Directly qualify the user's damaged physical USB; current tools are attached to the Mac, not the paired Windows machine.
+
+See [directory recovery details](docs/DIRECTORY_RECOVERY.md) and [executed validation](docs/VALIDATION.md).

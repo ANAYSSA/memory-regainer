@@ -80,3 +80,5 @@
 .preview-unavailable { font-size:10px; line-height:1.8; text-align:center; padding:15px; color:var(--muted); }
 .scan-diagnostics { margin-top:15px; line-height:1.8; }.scan-diagnostics h3 { font-size:11px; color:var(--text); }.status-jobs { display:flex; align-items:center; gap:15px; }
 @media(max-width:1180px) { .results-layout { grid-template-columns:1fr; }.result-tree { max-height:230px; }.tree-tabs button { flex:none; min-width:130px; } }
+
+.source-discovery-status { display:flex; gap:8px; align-items:flex-start; color:var(--muted); font-size:11px; line-height:1.7; margin:10px 0; overflow-wrap:anywhere; }.source-discovery-status>svg { flex:none; margin-top:2px; }

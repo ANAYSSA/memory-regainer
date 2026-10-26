@@ -77,3 +77,9 @@ Displayed capacity units are decimal KB/MB/GB/TB; raw offsets remain byte counts
 ## v0.2.0 result handling
 
 The interface offers location and type trees, name/path/type/deletion-status filtering and sorting. Unknown carved paths stay separate from recorded metadata paths. Fully accepted candidates can be recovered while a scan continues. Cancellation retains accepted results; recovery checks source identity again, and a failed identity check disables recovery. A blocked OS read can still delay cancellation. Candidate diagnostics count detected signatures, accepted/rejected candidates and a bounded set of rejection categories; they do not predict a recovery success rate.
+
+## v0.2.1 directory and discovery corrections
+
+Invalid directory candidates no longer reserve a visited cluster before validation. Deleted FAT special names with an E5 first byte are accepted only with consistent surviving names, attributes, zero special-record sizes, self/parent pointers and a free first cluster; evidence remains tentative. Available output basenames remain unchanged after safe sanitization, with suffixes only for real collisions. Empty directories are not independent results. See [directory recovery details](DIRECTORY_RECOVERY.md).
+
+Device discovery starts automatically, retries while idle and on return to the window, and displays loading/error states separately from scan errors. These lifecycle fixes have synthetic frontend coverage; they do not establish the cause of a particular Windows enumeration delay.

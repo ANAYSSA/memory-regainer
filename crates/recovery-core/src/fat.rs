@@ -1,6 +1,6 @@
 use crate::{check_cancel, le16, le32, Entry, Error, Extent, Partition, Result, Source};
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::atomic::AtomicBool,
 };
 
@@ -312,46 +312,96 @@ fn live_extents(
     Ok(extents)
 }
 
-fn deleted_directory(fat: &Fat, source: &mut Source, first: u32, parent: u32) -> Result<()> {
-    if fat.next(source, first)? != 0 {
-        return Err(Error::Invalid(
-            "first directory cluster is currently allocated".into(),
-        ));
+// Deletion may erase the first name byte of the two special records too. This
+// is a recovery heuristic only: all remaining name bytes, directory attributes,
+// zero sizes, self/parent pointers and the current allocation state must agree.
+fn dot_name(record: &[u8], parent: bool, deleted: bool) -> bool {
+    let expected = if parent {
+        b"..         "
+    } else {
+        b".          "
+    };
+    (record[0] == b'.' || (deleted && record[0] == 0xe5)) && record[1..11] == expected[1..]
+}
+fn directory_header(
+    fat: &Fat,
+    source: &mut Source,
+    directory: &Directory,
+    cancel: &AtomicBool,
+) -> Result<bool> {
+    check_cancel(cancel)?;
+    let first = directory.first;
+    let next = fat.next(source, first)?;
+    if directory.deleted {
+        if next != 0 {
+            return Err(Error::Invalid(format!(
+                "first directory cluster is currently allocated (FAT value {next:#x})"
+            )));
+        }
+    } else if next == 0 || (!fat.is_end(next) && !(2..fat.clusters + 2).contains(&next)) {
+        return Err(Error::Invalid(format!(
+            "live first directory cluster is free or has an invalid FAT link ({next:#x})"
+        )));
     }
-    let records = source.bytes(fat.cluster_offset(first)?, fat.cluster_bytes as usize)?;
+    let count = if directory.deleted {
+        fat.cluster_bytes as usize
+    } else {
+        64
+    };
+    let records = source.bytes(fat.cluster_offset(first)?, count)?;
     let dot = &records[..32];
     let dotdot = &records[32..64];
     let parent_cluster = record_cluster(fat, dotdot);
-    if &dot[..11] != b".          "
-        || &dotdot[..11] != b"..         "
-        || dot[11] != 0x10
-        || dotdot[11] != 0x10
-        || le32(dot, 28) != 0
-        || le32(dotdot, 28) != 0
-        || record_cluster(fat, dot) != first
-        || !(parent_cluster == parent || (parent == fat.root_cluster && parent_cluster == 0))
-    {
-        return Err(Error::Invalid(
-            "deleted directory lacks consistent . and .. records".into(),
-        ));
+    if !dot_name(dot, false, directory.deleted) || !dot_name(dotdot, true, directory.deleted) {
+        return Err(Error::Invalid(format!("directory special names are missing or damaged (first bytes {:#x}, {:#x}); deleted '.'/'..' may only replace the first byte with E5", dot[0], dotdot[0])));
     }
-    for record in records[64..].as_chunks::<32>().0 {
-        if record[0] == 0 {
-            break;
-        }
-        if record[11] == 0x0f {
-            if record[12] != 0 || le16(record, 26) != 0 {
+    // ATTR_DIRECTORY must be set; read-only/hidden/system/archive bits do not
+    // turn a directory into a file. Volume-label and reserved bits are invalid.
+    if [dot, dotdot]
+        .iter()
+        .any(|r| r[11] & 0x10 == 0 || r[11] & 0xc8 != 0 || le32(r, 28) != 0)
+    {
+        return Err(Error::Invalid(format!("directory special records have invalid attributes or nonzero sizes (attributes {:#x}/{:#x}, sizes {}/{})", dot[11], dotdot[11], le32(dot,28), le32(dotdot,28))));
+    }
+    if record_cluster(fat, dot) != first {
+        return Err(Error::Invalid(format!(
+            "'.' self cluster {} does not match first cluster {first}",
+            record_cluster(fat, dot)
+        )));
+    }
+    if !(parent_cluster == directory.parent
+        || (directory.parent == fat.root_cluster && parent_cluster == 0))
+    {
+        return Err(Error::Invalid(format!(
+            "'..' parent cluster {parent_cluster} does not match expected parent {}{}",
+            directory.parent,
+            if directory.parent == fat.root_cluster {
+                " (or 0 for the root directory)"
+            } else {
+                ""
+            }
+        )));
+    }
+    if directory.deleted {
+        for record in records[64..].as_chunks::<32>().0 {
+            check_cancel(cancel)?;
+            if record[0] == 0 {
+                break;
+            }
+            if record[11] == 0x0f {
+                if record[12] != 0 || le16(record, 26) != 0 {
+                    return Err(Error::Invalid(
+                        "deleted directory contains implausible long-name records".into(),
+                    ));
+                }
+            } else if record[11] & 0xc0 != 0 || !safe_name(&short_name(record)) {
                 return Err(Error::Invalid(
-                    "deleted directory contains implausible long-name records".into(),
+                    "deleted directory contains implausible directory records".into(),
                 ));
             }
-        } else if record[11] & 0xc0 != 0 || !safe_name(&short_name(record)) {
-            return Err(Error::Invalid(
-                "deleted directory contains implausible directory records".into(),
-            ));
         }
     }
-    Ok(())
+    Ok(dot[0] == 0xe5 || dotdot[0] == 0xe5)
 }
 
 struct Directory {
@@ -359,6 +409,8 @@ struct Directory {
     path: String,
     deleted: bool,
     parent: u32,
+    record_offset: Option<u64>,
+    declared_size: u32,
 }
 
 pub(crate) fn scan_deleted(
@@ -376,32 +428,59 @@ pub(crate) fn scan_deleted(
         path: String::new(),
         deleted: false,
         parent: 0,
+        record_offset: None,
+        declared_size: 0,
     }]);
-    let mut visited_dirs = HashSet::new();
+    let mut visited_dirs: HashMap<u32, String> = HashMap::new();
     let mut rejected = 0usize;
-    while let Some(Directory {
-        first,
-        path,
-        deleted: inherited_deleted,
-        parent,
-    }) = queue.pop_front()
-    {
+    while let Some(candidate) = queue.pop_front() {
         check_cancel(cancel)?;
+        let first = candidate.first;
+        let inherited_deleted = candidate.deleted;
+        let path = &candidate.path;
         let directory = format!("/{path}");
-        if !visited_dirs.insert(first) {
-            notices.push(format!("Directory {directory} skipped: its first cluster was already visited (alias or cycle)."));
+        let location = candidate.record_offset.map_or_else(
+            || format!("root cluster {first}"),
+            |at| {
+                format!(
+                    "record byte {at}, first cluster {first}, directory size {}",
+                    candidate.declared_size
+                )
+            },
+        );
+        if let Some(previous) = visited_dirs.get(&first) {
+            notices.push(format!("Directory {directory} ({location}) was already scanned as {previous}; this additional reference was not rescanned."));
             continue;
         }
-        if inherited_deleted {
-            match deleted_directory(&fat, source, first, parent) {
-                Ok(()) => notices.push(format!("Deleted directory {directory}: allocation chain is cleared; only its confirmed first cluster is searched. Its path and surviving child records are tentative.")),
+        let mut header_notes = Vec::new();
+        if candidate.record_offset.is_some() {
+            match directory_header(&fat, source, &candidate, cancel) {
+                Ok(erased_names) => {
+                    if erased_names {
+                        header_notes.push("Deleted E5 first bytes in '.'/'..' were reconstructed from their preserved name suffixes, attributes and self/parent pointers. This directory identification remains tentative.".to_string());
+                    }
+                    if inherited_deleted {
+                        notices.push(format!("Deleted directory {directory} ({location}): allocation chain is cleared; only its confirmed first cluster is searched. Its path and surviving child records are tentative."));
+                        if candidate.declared_size != 0 {
+                            let note = format!("Deleted directory record declares size {}, although FAT directory sizes must be zero. That size was ignored after the first free cluster's self/parent headers were verified; no additional clusters are inferred.", candidate.declared_size);
+                            notices.push(format!("Directory {directory} ({location}): {note}"));
+                            header_notes.push(note);
+                        }
+                    }
+                }
                 Err(Error::Invalid(reason)) => {
-                    notices.push(format!("Deleted directory {directory} skipped: {reason}."));
+                    notices.push(format!(
+                        "{} directory {directory} ({location}) skipped: {reason}.",
+                        if inherited_deleted { "Deleted" } else { "Live" }
+                    ));
                     continue;
                 }
                 Err(error) => return Err(error),
             }
         }
+        // A rejected stale alias must not consume this cluster's global visit:
+        // a later entry under the correct parent may provide valid evidence.
+        visited_dirs.insert(first, directory.clone());
         let mut chain = HashSet::new();
         let mut cluster = first;
         let mut lfn = Vec::<[u8; 32]>::new();
@@ -439,7 +518,11 @@ pub(crate) fn scan_deleted(
                     }
                     let long = lfn_name(&lfn, r);
                     lfn.clear();
-                    if r[11] & 0x08 != 0 || r[0] == b'.' {
+                    let special_deleted_dot = inherited_deleted
+                        && cluster == first
+                        && ((pos + (n * 32) as u64 == 0 && dot_name(r, false, true))
+                            || (pos + (n * 32) as u64 == 32 && dot_name(r, true, true)));
+                    if r[11] & 0x08 != 0 || r[0] == b'.' || special_deleted_dot {
                         continue;
                     }
                     let record_deleted = r[0] == 0xe5;
@@ -450,13 +533,21 @@ pub(crate) fn scan_deleted(
                         continue;
                     }
                     let start = record_cluster(&fat, r);
+                    let record_offset = offset + pos + (n * 32) as u64;
                     if r[11] & 0x10 != 0 {
-                        if start >= 2 && start < fat.clusters + 2 && le32(r, 28) == 0 {
+                        let declared_size = le32(r, 28);
+                        if start < 2 || start >= fat.clusters + 2 {
+                            notices.push(format!("Directory {directory}{name} (record byte {record_offset}, first cluster {start}, directory size {declared_size}) skipped: first cluster is outside the valid range 2..{}; its content location cannot be established.", fat.clusters + 1));
+                        } else if declared_size != 0 && !deleted {
+                            notices.push(format!("Live directory {directory}{name} (record byte {record_offset}, first cluster {start}, directory size {declared_size}) skipped: a live FAT directory must have size 0."));
+                        } else {
                             let next = Directory {
                                 first: start,
                                 path: format!("{path}{name}/"),
                                 deleted,
                                 parent: first,
+                                record_offset: Some(record_offset),
+                                declared_size,
                             };
                             // Prefer authoritative live ancestry before tentative deleted aliases.
                             if deleted {
@@ -464,13 +555,10 @@ pub(crate) fn scan_deleted(
                             } else {
                                 queue.push_front(next);
                             }
-                        } else {
-                            notices.push(format!("Directory {directory}{name} skipped: invalid first cluster or directory size."));
                         }
                         continue;
                     }
                     let size = u64::from(le32(r, 28));
-                    let record_offset = offset + pos + (n * 32) as u64;
                     let mut notes = vec![format!(
                         "{} FAT{} record in {directory}",
                         if deleted { "Deleted" } else { "Existing" },
@@ -486,6 +574,7 @@ pub(crate) fn scan_deleted(
                     if inherited_deleted {
                         notes.push("This record survives inside a deleted directory; deletion status and original ancestry are inferred and tentative.".into());
                     }
+                    notes.extend(header_notes.iter().cloned());
                     let uncertain_short_name =
                         long.is_none() && r[..11].iter().any(|b| *b >= 0x80 && *b != 0xe5);
                     if uncertain_short_name {

@@ -391,7 +391,10 @@ fn deleted_directory_only_scans_proven_first_cluster_and_breaks_parent_cycle() {
     );
     let r = scan_tree(&t);
     assert_eq!(r.entries.len(), 44);
-    assert!(r.warnings.iter().any(|w| w.contains("alias or cycle")));
+    assert!(r
+        .warnings
+        .iter()
+        .any(|w| w.contains("was already scanned as /Удалённые видео/")));
 }
 #[test]
 fn metadata_entries_stream_before_completion_and_survive_cancellation_for_the_caller() {
@@ -420,4 +423,260 @@ fn metadata_entries_stream_before_completion_and_survive_cancellation_for_the_ca
         Sha256::digest(&output),
         Sha256::digest(t.expected[entry.relative_path.as_ref().unwrap()])
     );
+}
+
+fn trash_record_offset() -> u64 {
+    cluster(2) + ((1 + lfn("Удалённые видео", b"DELETED    ", true).len()) * 32) as u64
+}
+fn writable(t: &Tree) -> File {
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&t.fixture.0)
+        .unwrap()
+}
+fn assert_tree_content(t: &Tree, result: &recovery_core::ScanResult) {
+    for e in &result.entries {
+        let expected = if e.kind == "mp4" { VIDEO } else { PHOTO };
+        let mut bytes = Vec::new();
+        recover_entry(&t.fixture.0, e, &mut bytes, &AtomicBool::new(false)).unwrap();
+        assert_eq!(Sha256::digest(&bytes), Sha256::digest(expected));
+    }
+}
+#[test]
+fn deleted_dot_first_bytes_are_tentative_but_preserved_pointers_still_recover() {
+    for mask in [1, 2, 3] {
+        let t = tree();
+        let mut f = writable(&t);
+        if mask & 1 != 0 {
+            write(&mut f, cluster(4), &[0xe5]);
+        }
+        if mask & 2 != 0 {
+            write(&mut f, cluster(4) + 32, &[0xe5]);
+        }
+        drop(f);
+        let before = Sha256::digest(fs::read(&t.fixture.0).unwrap());
+        let r = scan_tree(&t);
+        assert_eq!(r.entries.len(), 44, "{:?}", r.warnings);
+        assert_tree_content(&t, &r);
+        assert!(r
+            .entries
+            .iter()
+            .any(|e| e.notes.iter().any(|n| n.contains("Deleted E5 first bytes"))));
+        assert!(
+            !r.warnings.iter().any(|w| w.contains("was already scanned")),
+            "deleted dot records must not become child directories: {:?}",
+            r.warnings
+        );
+        assert_eq!(Sha256::digest(fs::read(&t.fixture.0).unwrap()), before);
+    }
+}
+#[test]
+fn erased_dot_names_do_not_allow_cleared_or_wrong_parent_and_self_pointers() {
+    for mode in 0..4 {
+        let t = tree();
+        let mut f = writable(&t);
+        write(&mut f, cluster(8), &[0xe5]);
+        write(&mut f, cluster(8) + 32, &[0xe5]);
+        match mode {
+            0 => write(&mut f, cluster(8) + 26, &0u16.to_le_bytes()),
+            1 => write(&mut f, cluster(8) + 32 + 26, &0u16.to_le_bytes()),
+            2 => write(&mut f, cluster(8) + 32 + 26, &999u16.to_le_bytes()),
+            _ => write(&mut f, cluster(8) + 1, b"X"),
+        }
+        let r = scan_tree(&t);
+        assert_eq!(r.entries.len(), 34, "{:?}", r.warnings);
+        assert!(r
+            .warnings
+            .iter()
+            .any(|w| w.contains("NESTED/") && w.contains("skipped")));
+    }
+}
+#[test]
+fn failed_deleted_alias_does_not_poison_later_correct_parent() {
+    let t = tree();
+    let mut f = writable(&t);
+    // Remove the root reference; the valid deleted directory now belongs to
+    // VIDEOS. PHOTOS is visited first and contains a stale wrong-parent alias.
+    write(&mut f, trash_record_offset() + 26, &0u16.to_le_bytes());
+    write(&mut f, cluster(4) + 32 + 26, &3u16.to_le_bytes());
+    write(
+        &mut f,
+        cluster(5) + 4 * 32,
+        &record(b"WRONG      ", 4, 0, true, true),
+    );
+    let mut good = lfn("Удалённые видео", b"DELETED    ", true);
+    good.push(record(b"DELETED    ", 4, 0, true, true));
+    for (i, r) in good.iter().enumerate() {
+        write(&mut f, cluster(3) + (4 + i as u64) * 32, r);
+    }
+    let r = scan_tree(&t);
+    assert_eq!(r.entries.len(), 44, "{:?}", r.warnings);
+    assert_tree_content(&t, &r);
+    assert_eq!(
+        r.entries
+            .iter()
+            .filter(|e| e
+                .relative_path
+                .as_deref()
+                .unwrap()
+                .starts_with("VIDEOS/Удалённые видео/"))
+            .count(),
+        20
+    );
+    assert!(r
+        .warnings
+        .iter()
+        .any(|w| w.contains("/PHOTOS/_RONG/") && w.contains("expected parent 5")));
+    assert!(!r
+        .warnings
+        .iter()
+        .any(|w| w.contains("/VIDEOS/Удалённые видео/") && w.contains("was already scanned")));
+}
+#[test]
+fn free_live_alias_does_not_poison_valid_deleted_directory() {
+    let t = tree();
+    let mut f = writable(&t);
+    let next = trash_record_offset() + 2 * 32; // after the deleted record and PHOTOS
+    write(&mut f, next, &record(b"LIVEALIA   ", 4, 0, true, false));
+    let r = scan_tree(&t);
+    assert_eq!(r.entries.len(), 44, "{:?}", r.warnings);
+    assert_tree_content(&t, &r);
+    assert!(r
+        .warnings
+        .iter()
+        .any(|w| w.contains("LIVEALIA/") && w.contains("live first directory cluster is free")));
+    assert!(!r.entries.iter().any(|e| e
+        .relative_path
+        .as_deref()
+        .unwrap()
+        .starts_with("LIVEALIA/")));
+}
+#[test]
+fn wrong_parent_live_alias_does_not_replace_confirmed_original_path() {
+    let t = tree();
+    let mut f = writable(&t);
+    write(
+        &mut f,
+        cluster(5) + 4 * 32,
+        &record(b"MIRROR     ", 6, 0, true, false),
+    );
+    let r = scan_tree(&t);
+    assert_eq!(r.entries.len(), 44, "{:?}", r.warnings);
+    assert_tree_content(&t, &r);
+    assert_eq!(
+        r.entries
+            .iter()
+            .filter(|e| e
+                .relative_path
+                .as_deref()
+                .unwrap()
+                .starts_with("VIDEOS/CAMERA1/"))
+            .count(),
+        11
+    );
+    assert!(!r.entries.iter().any(|e| e
+        .relative_path
+        .as_deref()
+        .unwrap()
+        .starts_with("PHOTOS/MIRROR/")));
+    assert!(r
+        .warnings
+        .iter()
+        .any(|w| w.contains("PHOTOS/MIRROR/") && w.contains("expected parent 5")));
+}
+#[test]
+fn deleted_nonzero_directory_size_requires_headers_and_is_never_a_read_length() {
+    let t = tree();
+    let mut f = writable(&t);
+    write(&mut f, trash_record_offset() + 28, &u32::MAX.to_le_bytes());
+    let r = scan_tree(&t);
+    assert_eq!(r.entries.len(), 44, "{:?}", r.warnings);
+    assert_tree_content(&t, &r);
+    assert!(r
+        .warnings
+        .iter()
+        .any(|w| w.contains("directory size 4294967295") && w.contains("That size was ignored")));
+    assert!(r.entries.iter().any(|e| e
+        .notes
+        .iter()
+        .any(|n| n.contains("no additional clusters are inferred"))));
+    write(&mut f, cluster(4), b"X");
+    let rejected = scan_tree(&t);
+    assert_eq!(rejected.entries.len(), 24);
+    assert!(rejected.warnings.iter().any(
+        |w| w.contains("directory size 4294967295") && w.contains("special names are missing")
+    ));
+}
+#[test]
+fn live_nonzero_directory_size_and_invalid_first_cluster_report_distinct_values() {
+    let t = tree();
+    let mut f = writable(&t);
+    write(&mut f, cluster(2) + 28, &512u32.to_le_bytes());
+    write(&mut f, trash_record_offset() + 26, &0u16.to_le_bytes());
+    let r = scan_tree(&t);
+    assert_eq!(r.entries.len(), 2, "{:?}", r.warnings);
+    assert!(r.warnings.iter().any(|w| w.contains("/VIDEOS")
+        && w.contains("first cluster 3, directory size 512")
+        && w.contains("must have size 0")));
+    assert!(r
+        .warnings
+        .iter()
+        .any(|w| w.contains("first cluster 0, directory size 0")
+            && w.contains("outside the valid range")));
+    assert!(r.warnings.iter().all(|w| w.contains("record byte")));
+}
+#[test]
+fn directory_attribute_bits_do_not_require_an_exact_ten_hex_value() {
+    let t = tree();
+    let mut f = writable(&t);
+    for c in [3, 4] {
+        write(&mut f, cluster(c) + 11, &[0x13]);
+        write(&mut f, cluster(c) + 32 + 11, &[0x14]);
+    }
+    let r = scan_tree(&t);
+    assert_eq!(r.entries.len(), 44, "{:?}", r.warnings);
+    assert_tree_content(&t, &r);
+}
+
+#[test]
+fn nested_deleted_utf16_lfn_and_full_relative_path_survive_recovery() {
+    let t = tree();
+    let bytes = fs::read(&t.fixture.0).unwrap();
+    let at = (cluster(8) + 64) as usize;
+    let first = (u32::from(u16::from_le_bytes(
+        bytes[at + 20..at + 22].try_into().unwrap(),
+    )) << 16)
+        | u32::from(u16::from_le_bytes(
+            bytes[at + 26..at + 28].try_into().unwrap(),
+        ));
+    let name = "Каникулы в Алматы.mp4";
+    let mut records = lfn(name, b"HOLIDA~1MP4", true);
+    records.push(record(b"HOLIDA~1MP4", first, VIDEO.len(), false, true));
+    let mut f = writable(&t);
+    directory(&mut f, 8, 4, &records, false);
+    write(&mut f, cluster(8), &[0xe5]);
+    write(&mut f, cluster(8) + 32, &[0xe5]);
+    drop(f);
+    let before = Sha256::digest(fs::read(&t.fixture.0).unwrap());
+    let r = scan_tree(&t);
+    assert_eq!(r.entries.len(), 35, "{:?}", r.warnings);
+    let file = r
+        .entries
+        .iter()
+        .find(|e| e.name == name)
+        .expect("preserved UTF-16 deleted filename");
+    assert_eq!(
+        file.relative_path.as_deref(),
+        Some("Удалённые видео/NESTED/Каникулы в Алматы.mp4")
+    );
+    assert_eq!(file.deletion_status, "deleted");
+    assert_eq!(file.confidence, "low");
+    assert!(file
+        .notes
+        .iter()
+        .any(|n| n.contains("name reconstruction is tentative")));
+    let mut recovered = Vec::new();
+    recover_entry(&t.fixture.0, file, &mut recovered, &AtomicBool::new(false)).unwrap();
+    assert_eq!(recovered, VIDEO);
+    assert_eq!(Sha256::digest(fs::read(&t.fixture.0).unwrap()), before);
 }

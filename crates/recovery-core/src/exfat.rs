@@ -541,7 +541,7 @@ pub(crate) fn scan_deleted(
     {
         check_cancel(cancel)?;
         let directory = format!("/{path}");
-        if !visited.insert(first) {
+        if visited.contains(&first) {
             notices.push(format!("Directory {directory} skipped: its first cluster was already visited (alias or cycle)."));
             continue;
         }
@@ -571,6 +571,9 @@ pub(crate) fn scan_deleted(
             ));
             continue;
         }
+        // Rejected aliases with invalid lengths/chains/bitmap state must not
+        // prevent a later independent, valid reference to the same first cluster.
+        visited.insert(first);
         if inherited_deleted {
             notices.push(format!("Deleted directory {directory}: intact contiguous length and free clusters were verified; surviving records and original ancestry remain tentative."));
         }

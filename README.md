@@ -13,10 +13,10 @@ The interface supports English and Russian. The single Scan action checks suppor
 ## Get started
 
 1. Stop writing to the affected storage. Prefer a raw disk image created on healthy storage.
-2. Open the image in Memory Regainer, or select an accessible physical device. Starting with v0.1.1, Windows requests administrator access through the standard UAC prompt at application launch. macOS permissions remain controlled by the OS.
+2. Connected drives appear automatically when the app opens. Open an image or select an accessible device; discovery also retries while idle and when you return to the window. Windows requests administrator access through the standard UAC prompt at application launch. macOS permissions remain controlled by the OS.
 3. Click **Scan** to inspect filesystem metadata and search file contents. **Expert options** expands optional format filters and byte ranges. Leave format boxes unchecked for all supported types and the range empty for the entire source.
 4. Review results as they arrive, grouped by location or file type. Check deletion status, paths, evidence, notes and previews; counts alone do not establish successful recovery.
-5. Select files and choose a healthy destination. The app writes into a new recovery folder and verifies copied bytes using SHA-256 read-back.
+5. Select files or a folder's files and choose a healthy destination. The app writes into a new recovery folder and verifies copied bytes using SHA-256 read-back. Available metadata names and folder paths are preserved after safe filename sanitization; only collisions receive a numeric suffix.
 6. Inspect `recovery-report.json`. A verified copy establishes copy integrity; it does not prove that pre-deletion bytes were intact.
 
 The application is designed for Windows 10/11 x64 and macOS Apple Silicon / Intel. Native installer builds and automated tests are defined in [GitHub Actions](.github/workflows/release.yml). Build completion, interactive installer testing and raw-device qualification are different checks: see [validation](docs/VALIDATION.md) for actual evidence. Linux source support is secondary and has no packaged release in this milestone. Windows ARM64 is not qualified.
@@ -45,7 +45,7 @@ Validated results arrive during scanning through a separate paged API. They can 
 
 While a scan, recovery or image acquisition is active, v0.1.1 requests protection from automatic idle system sleep on Windows and macOS and shows whether the request succeeded. The display may dim. Manual sleep, lid closure, shutdown, disconnection and battery loss can still interrupt work. Cancellation is cooperative: a blocked device read may delay completion. There are no resumable scan checkpoints. See [validation](docs/VALIDATION.md) for executed checks; real damaged-device and sleep/wake qualification remains outstanding.
 
-MP4/MOV files found by content scanning receive generated names. Save them to healthy storage and check them in a local video player. Structural consistency and a matching copy hash cannot prove that freed media bytes were not overwritten. See [video validation](docs/VIDEO_RECOVERY_VALIDATION.md) for the exact tested cases.
+Files found only by content scanning receive generated names and are grouped by type. Their contents do not establish the original filename or folder. When filesystem records survive, metadata scanning can retain names and paths; damaged or overwritten records may prevent this even when the content is recoverable. See [directory recovery evidence and limits](docs/DIRECTORY_RECOVERY.md). Save MP4/MOV files to healthy storage and check them in a local video player. Structural consistency and a matching copy hash cannot prove that freed media bytes were not overwritten. See [video validation](docs/VIDEO_RECOVERY_VALIDATION.md) for the exact tested cases.
 
 ZIP supports bounded central-directory validation, data descriptors and ZIP64. DOCX classification checks bounded package metadata; RAR4/RAR5 check headers, declared bounds and an explicit end record. Archive payloads are not generally decoded by the app. See [archive validation and limits](docs/ARCHIVE_RECOVERY_VALIDATION.md).
 

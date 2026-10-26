@@ -568,3 +568,26 @@ fn exfat_entry_callback_precedes_completion_and_observes_cancellation() {
     assert_eq!(seen.len(), 1);
     assert_eq!(read_entry(&f.0, &seen[0], 100000).unwrap(), PDF);
 }
+
+#[test]
+fn invalid_exfat_alias_does_not_block_a_later_valid_stream_length() {
+    let mut b = image(true);
+    b[FILESET..HEAP + SECTOR].fill(0);
+    // Live directories are queued at the front, so BAD is visited first. Its
+    // second claimed cluster is free; GOOD describes the intact one-cluster dir.
+    let good = file_set("GOOD", 6, SECTOR as u64, false, true);
+    let bad = file_set("BAD", 6, 2 * SECTOR as u64, false, true);
+    b[FILESET..FILESET + good.len()].copy_from_slice(&good);
+    b[FILESET + good.len()..FILESET + good.len() + bad.len()].copy_from_slice(&bad);
+    let (f, r) = quick(&b);
+    assert_eq!(r.entries.len(), 1, "{:?}", r.warnings);
+    assert_eq!(
+        r.entries[0].relative_path.as_deref(),
+        Some("GOOD/Удалённый документ.pdf")
+    );
+    assert_eq!(read_entry(&f.0, &r.entries[0], 100000).unwrap(), PDF);
+    assert!(r
+        .warnings
+        .iter()
+        .any(|w| w.contains("BAD/") && w.contains("live metadata cluster as free")));
+}

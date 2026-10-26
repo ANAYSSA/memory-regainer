@@ -1554,9 +1554,9 @@ mod tests {
             begin(&state, registered, ScanOptions::default(), source.size).unwrap();
         let entry = Entry {
             id: "live-file".into(),
-            name: "clip.mp4".into(),
+            name: "Видео 🎬.mp4".into(),
             kind: "mp4".into(),
-            relative_path: Some("Family/Holiday/clip.mp4".into()),
+            relative_path: Some("Семья/Поездка/Видео 🎬.mp4".into()),
             partition: Some("USB".into()),
             size: source.size,
             extents: vec![recovery_core::Extent {
@@ -1606,8 +1606,9 @@ mod tests {
         assert_eq!(report.recovered, 1);
         assert_eq!(
             report.files[0].original_path.as_deref(),
-            Some("Family/Holiday/clip.mp4")
+            Some("Семья/Поездка/Видео 🎬.mp4")
         );
+        assert_eq!(report.files[0].name, "USB/Семья/Поездка/Видео 🎬.mp4");
         assert_eq!(
             fs::read(Path::new(&report.destination).join(&report.files[0].name)).unwrap(),
             payload
