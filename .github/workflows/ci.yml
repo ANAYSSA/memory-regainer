@@ -79,6 +79,11 @@ jobs:
           cache-dependency-path: apps/desktop/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Read-only physical disk and mounted FAT32 volume regression
+        shell: pwsh
+        run: ./scripts/windows_raw_device_test.ps1
       - name: Build frontend embedded by desktop tests
         working-directory: apps/desktop
         run: |
@@ -86,6 +91,3 @@ jobs:
           npm run build
       - name: Native Windows recovery and backend tests
         run: cargo test --workspace --locked
-      - name: Read-only physical disk and mounted FAT32 volume regression
-        shell: pwsh
-        run: ./scripts/windows_raw_device_test.ps1
