@@ -42,6 +42,7 @@ pub struct SourceReader {
     len: u64,
     raw: bool,
     sector: u32,
+    sector_known: bool,
     bounds: (u64, u64),
     cache: Vec<CachePage>,
     tick: u64,
@@ -53,7 +54,7 @@ impl SourceReader {
     pub fn open(path: &Path, size_hint: Option<u64>) -> Result<Self> {
         let raw = raw_path(path);
         let file = open_read_only(path)?;
-        let (len, sector) = if raw {
+        let (len, sector, sector_known) = if raw {
             device_geometry(&file, size_hint)?
         } else {
             let metadata = file
@@ -64,7 +65,7 @@ impl SourceReader {
                     "Source is not a regular image or a recognized raw device".into(),
                 ));
             }
-            (metadata.len(), 1)
+            (metadata.len(), 1, false)
         };
         if len == 0 {
             return Err(Error::Invalid("Source is empty".into()));
@@ -81,6 +82,7 @@ impl SourceReader {
             len,
             raw,
             sector,
+            sector_known,
             bounds: (0, len),
             cache: Vec::new(),
             tick: 0,
@@ -100,6 +102,10 @@ impl SourceReader {
     }
     pub fn sector_size(&self) -> u32 {
         self.sector
+    }
+    /// Measured logical sector size; alignment fallbacks are not measurements.
+    pub fn measured_sector_size(&self) -> Option<u32> {
+        (self.raw && self.sector_known).then_some(self.sector)
     }
     /// Actual bytes returned by underlying reads, including any revisits/read-ahead.
     pub fn bytes_read(&self) -> u64 {
@@ -251,9 +257,53 @@ fn open_read_only(path: &Path) -> Result<File> {
         use std::os::windows::fs::OpenOptionsExt;
         options.share_mode(0x1 | 0x2);
     }
-    options
+    let file = options
         .open(path)
-        .map_err(|e| io_error("open source read-only", None, 0, e))
+        .map_err(|e| io_error("open source read-only", None, 0, e))?;
+    #[cfg(windows)]
+    {
+        let value = path.to_string_lossy().to_ascii_lowercase();
+        if windows_raw_path(&value) && !value.starts_with(r"\\.\physicaldrive") {
+            use std::{ffi::c_void, os::windows::io::AsRawHandle};
+            #[link(name = "kernel32")]
+            extern "system" {
+                fn DeviceIoControl(
+                    handle: *mut c_void,
+                    code: u32,
+                    input: *mut c_void,
+                    input_len: u32,
+                    output: *mut c_void,
+                    output_len: u32,
+                    returned: *mut u32,
+                    overlapped: *mut c_void,
+                ) -> i32;
+            }
+            let mut returned = 0;
+            // FSCTL_ALLOW_EXTENDED_DASD_IO permits read access to the volume tail.
+            // The handle remains GENERIC_READ; no locking, dismount or writes.
+            let ok = unsafe {
+                DeviceIoControl(
+                    file.as_raw_handle(),
+                    0x0009_0083,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    0,
+                    &mut returned,
+                    std::ptr::null_mut(),
+                )
+            };
+            if ok == 0 {
+                return Err(io_error(
+                    "enable full read-only volume access",
+                    None,
+                    0,
+                    std::io::Error::last_os_error(),
+                ));
+            }
+        }
+    }
+    Ok(file)
 }
 fn raw_path(path: &Path) -> bool {
     let value = path.to_string_lossy();
@@ -286,7 +336,7 @@ fn windows_raw_path(value: &str) -> bool {
     false
 }
 #[cfg(windows)]
-fn device_geometry(file: &File, size_hint: Option<u64>) -> Result<(u64, u32)> {
+fn device_geometry(file: &File, size_hint: Option<u64>) -> Result<(u64, u32, bool)> {
     use std::{ffi::c_void, os::windows::io::AsRawHandle};
     #[link(name = "kernel32")]
     extern "system" {
@@ -332,8 +382,11 @@ fn device_geometry(file: &File, size_hint: Option<u64>) -> Result<(u64, u32)> {
     let len=known_length.or(size_hint.filter(|n|*n>0)).ok_or_else(||Error::Invalid("Windows could not determine raw disk length; select an enumerated device with a known capacity or scan an image".into()))?;
     // IOCTL_DISK_GET_DRIVE_GEOMETRY has BytesPerSector at offset20.
     let mut geometry = [0u8; 24];
-    let sector = if query(file, 0x0007_0000, &mut geometry).is_ok_and(|n| n >= 24) {
-        u32::from_le_bytes(geometry[20..24].try_into().expect("sector field"))
+    let (sector, known) = if query(file, 0x0007_0000, &mut geometry).is_ok_and(|n| n >= 24) {
+        (
+            u32::from_le_bytes(geometry[20..24].try_into().expect("sector field")),
+            true,
+        )
     } else {
         // 4096 is a conservative transfer alignment for 512/4096-sector media.
         // No successful geometry query means no claim of a measured sector size.
@@ -342,12 +395,12 @@ fn device_geometry(file: &File, size_hint: Option<u64>) -> Result<(u64, u32)> {
                 "Raw sector geometry unavailable; scan a disk image instead".into(),
             ));
         }
-        4096
+        (4096, false)
     };
-    Ok((len, sector))
+    Ok((len, sector, known))
 }
 #[cfg(not(windows))]
-fn device_geometry(file: &File, size_hint: Option<u64>) -> Result<(u64, u32)> {
+fn device_geometry(file: &File, size_hint: Option<u64>) -> Result<(u64, u32, bool)> {
     use std::{ffi::c_void, os::fd::AsRawFd};
     extern "C" {
         fn ioctl(fd: i32, request: usize, ...) -> i32;
@@ -407,6 +460,7 @@ fn device_geometry(file: &File, size_hint: Option<u64>) -> Result<(u64, u32)> {
         let mut handle = file;
         handle.seek(SeekFrom::End(0)).ok().filter(|n| *n > 0).ok_or_else(|| Error::Invalid("Raw source size unavailable; supply the enumerated byte length or scan an image".into()))?
     };
+    let known = sector != 0;
     if sector == 0 {
         sector = if length.is_multiple_of(4096) {
             4096
@@ -414,7 +468,7 @@ fn device_geometry(file: &File, size_hint: Option<u64>) -> Result<(u64, u32)> {
             512
         };
     }
-    Ok((length, sector))
+    Ok((length, sector, known))
 }
 
 #[cfg(test)]

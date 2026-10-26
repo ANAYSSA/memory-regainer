@@ -393,3 +393,178 @@ fn exfat_entry_set_crosses_directory_cluster_and_read_page_boundary() {
     assert_eq!(r.entries[0].offset, content as u64);
     assert_eq!(read_entry(&f.0, &r.entries[0], 100000).unwrap(), PDF);
 }
+
+fn set_allocated(image: &mut [u8], cluster: usize, allocated: bool) {
+    let bit = cluster - 2;
+    if allocated {
+        image[BITMAP + bit / 8] |= 1 << (bit % 8);
+    } else {
+        image[BITMAP + bit / 8] &= !(1 << (bit % 8));
+    }
+}
+fn live_video_image(fragmented: bool) -> (Vec<u8>, Vec<usize>) {
+    let video = include_bytes!("fixtures/video/original-tail.mp4");
+    let mut b = image(false);
+    b[FILESET..HEAP + SECTOR].fill(0);
+    let mut set = file_set("existing.mp4", 10, video.len() as u64, false, false);
+    set[33] = if fragmented { 1 } else { 3 };
+    entry_checksum(&mut set, false);
+    b[FILESET..FILESET + set.len()].copy_from_slice(&set);
+    let clusters: Vec<usize> = (0..video.len().div_ceil(SECTOR))
+        .map(|n| 10 + n * if fragmented { 2 } else { 1 })
+        .collect();
+    for (i, cluster) in clusters.iter().copied().enumerate() {
+        let begin = i * SECTOR;
+        let end = (begin + SECTOR).min(video.len());
+        let at = HEAP + (cluster - 2) * SECTOR;
+        b[at..at + end - begin].copy_from_slice(&video[begin..end]);
+        set_allocated(&mut b, cluster, true);
+        if fragmented {
+            p32(
+                &mut b,
+                FAT + cluster * 4,
+                clusters.get(i + 1).copied().map_or(u32::MAX, |c| c as u32),
+            );
+        }
+    }
+    (b, clusters)
+}
+#[test]
+fn exfat_existing_video_uses_allocated_contiguous_or_fragmented_chain_exactly() {
+    let video = include_bytes!("fixtures/video/original-tail.mp4");
+    for fragmented in [false, true] {
+        let (b, _) = live_video_image(fragmented);
+        let before = Sha256::digest(&b);
+        let (f, r) = quick(&b);
+        assert_eq!(r.entries.len(), 1, "{:?}", r.warnings);
+        let e = &r.entries[0];
+        assert_eq!(e.deletion_status, "existing");
+        assert_eq!(e.relative_path.as_deref(), Some("existing.mp4"));
+        assert_eq!(e.method, "exfat-metadata");
+        assert_eq!(e.extents.len() > 1, fragmented);
+        let mut recovered = Vec::new();
+        recover_entry(&f.0, e, &mut recovered, &AtomicBool::new(false)).unwrap();
+        assert_eq!(Sha256::digest(&recovered), Sha256::digest(video));
+        assert_eq!(Sha256::digest(fs::read(&f.0).unwrap()), before);
+    }
+}
+#[test]
+fn exfat_existing_file_free_cluster_bad_chain_or_cycle_does_not_hide_other_records() {
+    for mode in 0..3 {
+        let (mut b, clusters) = live_video_image(true);
+        match mode {
+            0 => set_allocated(&mut b, clusters[1], false),
+            1 => p32(&mut b, FAT + clusters[0] * 4, u32::MAX),
+            _ => p32(&mut b, FAT + clusters[0] * 4, clusters[0] as u32),
+        }
+        let other = file_set("independent.pdf", 200, PDF.len() as u64, true, false);
+        b[FILESET + 96..FILESET + 96 + other.len()].copy_from_slice(&other);
+        let data = HEAP + 198 * SECTOR;
+        b[data..data + PDF.len()].copy_from_slice(PDF);
+        let (f, r) = quick(&b);
+        assert_eq!(r.entries.len(), 1, "{:?}", r.warnings);
+        assert_eq!(r.entries[0].name, "independent.pdf");
+        assert_eq!(read_entry(&f.0, &r.entries[0], 100000).unwrap(), PDF);
+        assert!(r
+            .warnings
+            .iter()
+            .any(|w| w.contains("Other independent records were retained")));
+    }
+}
+fn deleted_tree_image() -> Vec<u8> {
+    let mut b = image(true);
+    let dir = file_set("Документы", 6, SECTOR as u64, true, true);
+    b[FILESET..FILESET + dir.len()].copy_from_slice(&dir);
+    set_allocated(&mut b, 6, false);
+    let first = HEAP + 4 * SECTOR;
+    b[first..first + SECTOR].fill(0);
+    let child = file_set("surviving.pdf", 10, PDF.len() as u64, false, false);
+    b[first..first + child.len()].copy_from_slice(&child);
+    let nested = file_set("Вложенные", 7, SECTOR as u64, false, true);
+    b[first + child.len()..first + child.len() + nested.len()].copy_from_slice(&nested);
+    let second = HEAP + 5 * SECTOR;
+    b[second..second + child.len()].copy_from_slice(&child);
+    b
+}
+#[test]
+fn exfat_deleted_directory_keeps_unicode_path_and_inherits_tentative_child_deletion() {
+    let b = deleted_tree_image();
+    let (f, r) = quick(&b);
+    assert_eq!(r.entries.len(), 2, "{:?}", r.warnings);
+    let mut paths: Vec<_> = r
+        .entries
+        .iter()
+        .map(|e| e.relative_path.as_deref().unwrap())
+        .collect();
+    paths.sort();
+    assert_eq!(
+        paths,
+        [
+            "Документы/surviving.pdf",
+            "Документы/Вложенные/surviving.pdf"
+        ]
+    );
+    for e in &r.entries {
+        assert_eq!(e.deletion_status, "deleted");
+        assert_eq!(e.confidence, "low");
+        assert!(e.notes.iter().any(|n| n.contains("ancestry")));
+        assert_eq!(read_entry(&f.0, e, 100000).unwrap(), PDF);
+    }
+    assert!(r.warnings.iter().any(|w| w.contains("Deleted directory")));
+}
+#[test]
+fn exfat_deleted_directory_requires_free_bitmap_and_valid_entry_checksum_and_length() {
+    for mode in 0..4 {
+        let mut b = deleted_tree_image();
+        match mode {
+            0 => set_allocated(&mut b, 6, true),
+            1 => b[FILESET + 2] ^= 1,
+            2 => {
+                let set = &mut b[FILESET..FILESET + 96];
+                set[33] = 1;
+                entry_checksum(set, true);
+            }
+            _ => {
+                let set = &mut b[FILESET..FILESET + 96];
+                p64(set, 40, u64::MAX);
+                p64(set, 56, u64::MAX);
+                entry_checksum(set, true);
+            }
+        }
+        let (_, r) = quick(&b);
+        assert!(r.entries.is_empty(), "mode {mode}: {:?}", r.entries);
+        assert!(!r.warnings.is_empty());
+    }
+}
+#[test]
+fn exfat_deleted_directory_cycle_is_bounded_without_losing_valid_files() {
+    let mut b = deleted_tree_image();
+    let nested = HEAP + 5 * SECTOR;
+    let cycle = file_set("loop", 6, SECTOR as u64, false, true);
+    b[nested + 96..nested + 96 + cycle.len()].copy_from_slice(&cycle);
+    let (_, r) = quick(&b);
+    assert_eq!(r.entries.len(), 2);
+    assert!(r.warnings.iter().any(|w| w.contains("alias or cycle")));
+}
+#[test]
+fn exfat_entry_callback_precedes_completion_and_observes_cancellation() {
+    let f = Fixture::new(&deleted_tree_image());
+    let cancel = AtomicBool::new(false);
+    let mut seen = Vec::new();
+    let result = recovery_core::scan_with_events(
+        &f.0,
+        &ScanOptions::default(),
+        None,
+        &cancel,
+        |_| {},
+        |event| {
+            if let recovery_core::ScanEvent::Entry(e) = event {
+                seen.push(e);
+                cancel.store(true, Ordering::SeqCst);
+            }
+        },
+    );
+    assert!(matches!(result, Err(recovery_core::Error::Cancelled)));
+    assert_eq!(seen.len(), 1);
+    assert_eq!(read_entry(&f.0, &seen[0], 100000).unwrap(), PDF);
+}

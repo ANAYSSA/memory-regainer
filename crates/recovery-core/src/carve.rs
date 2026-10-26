@@ -1,9 +1,13 @@
 use crate::{
-    check_cancel, le16, le32, partition::crc32_update, video, Entry, Error, Extent, Result, Source,
+    archives, check_cancel, formats, le16, le32, partition::crc32_update, video, Entry, Error,
+    Extent, Result, ScanDiagnostics, Source,
 };
-use std::sync::atomic::AtomicBool;
+use std::{
+    sync::atomic::AtomicBool,
+    time::{Duration, Instant},
+};
 
-const CHUNK: usize = 1024 * 1024 - 16;
+const READ_WINDOW: usize = 1024 * 1024;
 const MAX_IMAGE: u64 = 256 * 1024 * 1024;
 const MAX_DOCUMENT: u64 = 256 * 1024 * 1024;
 const MAX_CONTAINER: u64 = 1024 * 1024 * 1024;
@@ -21,102 +25,200 @@ fn be32(b: &[u8], p: usize) -> u32 {
     u32::from_be_bytes(b[p..p + 4].try_into().expect("bounded field"))
 }
 
+// Separate callbacks keep metadata/results/diagnostics streaming without shared mutable state.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn scan(
     source: &mut Source,
     start: u64,
     end: u64,
     types: &[String],
     cancel: &AtomicBool,
-    mut progress: impl FnMut(u64, usize),
+    progress: impl FnMut(u64, usize),
+    on_entry: &mut impl FnMut(&Entry),
+    on_diagnostic: &mut impl FnMut(ScanDiagnostics),
 ) -> Result<Vec<Entry>> {
+    let rules = formats::rules(types);
+    scan_rules(
+        source,
+        start,
+        end,
+        types,
+        cancel,
+        progress,
+        on_entry,
+        on_diagnostic,
+        &rules,
+    )
+}
+#[allow(clippy::too_many_arguments)]
+fn scan_rules(
+    source: &mut Source,
+    start: u64,
+    end: u64,
+    types: &[String],
+    cancel: &AtomicBool,
+    mut progress: impl FnMut(u64, usize),
+    on_entry: &mut impl FnMut(&Entry),
+    on_diagnostic: &mut impl FnMut(ScanDiagnostics),
+    rules: &[formats::Rule],
+) -> Result<Vec<Entry>> {
+    let mut buckets: [Vec<usize>; 256] = std::array::from_fn(|_| Vec::new());
+    let overlap = rules
+        .iter()
+        .map(|r| r.offset + r.magic.len())
+        .max()
+        .unwrap_or(1);
+    let chunk = READ_WINDOW
+        .checked_sub(overlap)
+        .filter(|n| *n > 0)
+        .ok_or_else(|| invalid("Signature span exceeds bounded read window"))?;
+    for (index, rule) in rules.iter().enumerate() {
+        buckets[rule.magic[0] as usize].push(index);
+    }
     let mut found = Vec::new();
     let mut offset = start;
     let mut skip_until = start;
-    let video_enabled = types.is_empty()
-        || types
-            .iter()
-            .any(|t| t.eq_ignore_ascii_case("mp4") || t.eq_ignore_ascii_case("mov"));
+    let mut diagnostics = ScanDiagnostics::default();
+    let mut last_diagnostic = Instant::now();
     while offset < end {
         check_cancel(cancel)?;
-        let len = (end - offset).min((CHUNK + 16) as u64) as usize;
+        let len = (end - offset).min(READ_WINDOW as u64) as usize;
         let block = source.bytes(offset, len)?;
-        let process = (end - offset).min(CHUNK as u64) as usize;
+        let process = (end - offset).min(chunk as u64) as usize;
         let mut i = 0;
         while i < process {
             if i % 4096 == 0 {
                 check_cancel(cancel)?;
             }
-            let absolute = offset + i as u64;
-            if absolute < skip_until {
-                i += (skip_until - absolute).min((process - i) as u64) as usize;
+            let anchor = offset + i as u64;
+            if anchor < skip_until {
+                i += (skip_until - anchor).min((process - i) as u64) as usize;
                 continue;
             }
-            let b = &block[i..];
-            let kind = if b.starts_with(b"\x89PNG\r\n\x1a\n") {
-                "png"
-            } else if b.starts_with(b"\xff\xd8\xff") {
-                "jpg"
-            } else if b.starts_with(b"%PDF-") {
-                "pdf"
-            } else if b.starts_with(b"GIF87a") || b.starts_with(b"GIF89a") {
-                "gif"
-            } else if b.starts_with(b"PK\x03\x04") {
-                "zip"
-            } else if b.starts_with(b"BM") {
-                "bmp"
-            } else if b.len() >= 12 && &b[..4] == b"RIFF" && &b[8..12] == b"WAVE" {
-                "wav"
-            } else if video_enabled && b.len() >= 8 && &b[4..8] == b"ftyp" {
-                match video::classify(source, absolute, end, cancel) {
-                    Ok(kind) => kind,
-                    Err(Error::Invalid(_)) => {
-                        i += 1;
-                        continue;
+            // One indexed lookup per byte; only the few eligible magic values
+            // are compared. Offset signatures (ftyp) retain arbitrary alignment.
+            for index in &buckets[block[i] as usize] {
+                let rule = &rules[*index];
+                if !block[i..].starts_with(&rule.magic) {
+                    continue;
+                }
+                let Some(absolute) = anchor
+                    .checked_sub(rule.offset as u64)
+                    .filter(|v| *v >= start)
+                else {
+                    continue;
+                };
+                diagnostics.candidates = diagnostics.candidates.saturating_add(1);
+                if last_diagnostic.elapsed() >= Duration::from_millis(100) {
+                    on_diagnostic(diagnostics.clone());
+                    last_diagnostic = Instant::now();
+                }
+                let bound = end.min(absolute.saturating_add(rule.max_bytes));
+                let validated = match rule.validator.as_str() {
+                    "video" => video::classify(source, absolute, bound, cancel)
+                        .and_then(|kind| {
+                            if !formats::matches_filter(kind, types) {
+                                return Err(invalid("Filtered video subtype"));
+                            }
+                            video::probe(source, absolute, bound, cancel)
+                        })
+                        .map(|c| archives::Candidate {
+                            offset: absolute,
+                            size: c.size,
+                            kind: c.kind,
+                            evidence: c.evidence,
+                        }),
+                    "zip-eocd" => archives::zip(source, anchor, start, end, cancel),
+                    "rar" => archives::rar(source, absolute, bound, cancel),
+                    validator => {
+                        let (kind, result) = match validator {
+                            "jpeg" => ("jpg", jpeg(source, absolute, bound, cancel)),
+                            "png" => ("png", png(source, absolute, bound, cancel)),
+                            "pdf" => ("pdf", pdf(source, absolute, bound, cancel)),
+                            "gif" => ("gif", gif(source, absolute, bound, cancel)),
+                            "bmp" => ("bmp", bmp(source, absolute, bound)),
+                            "wav" => ("wav", wav(source, absolute, bound, cancel)),
+                            _ => unreachable!("validated registry handler"),
+                        };
+                        result.map(|(size, evidence)| archives::Candidate {
+                            offset: absolute,
+                            size,
+                            kind,
+                            evidence: evidence.into(),
+                        })
                     }
-                    Err(error) => return Err(error),
-                }
-            } else {
-                i += 1;
-                continue;
-            };
-            if !types.is_empty() && !types.iter().any(|t| t.eq_ignore_ascii_case(kind)) {
-                i += 1;
-                continue;
-            }
-            let validated = if matches!(kind, "mp4" | "mov") {
-                video::probe(source, absolute, end, cancel).and_then(|candidate| {
-                    if candidate.kind != kind {
-                        return Err(invalid("Video brand changed during scan"));
+                };
+                match validated {
+                    Ok(c) if c.size <= rule.max_bytes && formats::matches_filter(c.kind, types) => {
+                        let entry = Entry {
+                            id: format!("carve-{:x}-{:x}", c.offset, c.size),
+                            name: format!("recovered_{:016x}.{}", c.offset, c.kind),
+                            kind: c.kind.into(), size:c.size, offset:c.offset,
+                            confidence:"medium".into(), method:"signature-carving".into(),
+                            notes:vec![c.evidence, "Contiguous signature recovery; original name, deletion status and folder are unknown. Recognisable structure does not guarantee intact content.".into()],
+                            extents:vec![Extent { offset:c.offset,length:c.size }],
+                            relative_path:None, partition:None, deletion_status:"unknown".into(),
+                        };
+                        diagnostics.accepted = diagnostics.accepted.saturating_add(1);
+                        skip_until = entry.offset + entry.size;
+                        on_entry(&entry);
+                        found.push(entry);
+                        progress(anchor - start, found.len());
+                        break;
                     }
-                    Ok((candidate.size, candidate.evidence))
-                })
-            } else {
-                match kind {
-                    "png" => png(source, absolute, end, cancel),
-                    "jpg" => jpeg(source, absolute, end, cancel),
-                    "pdf" => pdf(source, absolute, end, cancel),
-                    "gif" => gif(source, absolute, end, cancel),
-                    "zip" => zip(source, absolute, end, cancel),
-                    "bmp" => bmp(source, absolute, end),
-                    "wav" => wav(source, absolute, end, cancel),
-                    _ => unreachable!(),
+                    Ok(_) => rejection(
+                        &mut diagnostics,
+                        &rule.validator,
+                        "filtered subtype or size limit",
+                    ),
+                    Err(Error::Invalid(message)) => {
+                        let reason = if message.contains("CRC") || message.contains("checksum") {
+                            "checksum mismatch"
+                        } else if message.contains("unsupported")
+                            || message.contains("Unsupported")
+                            || message.contains("Unrecognised")
+                        {
+                            "unsupported layout"
+                        } else if message.contains("limit") || message.contains("too large") {
+                            "resource limit"
+                        } else if message.contains("Truncated")
+                            || message.contains("truncated")
+                            || message.contains("bounds")
+                            || message.contains("beyond")
+                            || message.contains("exceeds")
+                        {
+                            "truncated or out of bounds"
+                        } else {
+                            "invalid structure"
+                        };
+                        rejection(&mut diagnostics, &rule.validator, reason);
+                    }
+                    Err(error) => {
+                        on_diagnostic(diagnostics);
+                        return Err(error);
+                    }
                 }
-                .map(|(size, evidence)| (size, evidence.to_string()))
-            };
-            match validated {
-                Ok((size, evidence)) => {
-                    found.push(Entry { id:format!("carve-{absolute:x}-{size:x}"),name:format!("recovered_{absolute:016x}.{kind}"),kind:kind.into(),size,offset:absolute,confidence:"medium".into(),method:"signature-carving".into(),notes:vec![evidence,"Contiguous signature recovery; original name, deletion status and folder are unknown. Recognisable structure does not guarantee intact content.".into()],extents:vec![Extent {offset:absolute,length:size}] });
-                    skip_until = absolute + size;
-                }
-                Err(Error::Invalid(_)) => {}
-                Err(e) => return Err(e),
             }
             i += 1;
         }
         offset += process as u64;
         progress(offset - start, found.len());
+        if last_diagnostic.elapsed() >= Duration::from_millis(100) {
+            on_diagnostic(diagnostics.clone());
+            last_diagnostic = Instant::now();
+        }
     }
+    on_diagnostic(diagnostics);
     Ok(found)
+}
+fn rejection(diagnostics: &mut ScanDiagnostics, format: &str, reason: &str) {
+    diagnostics.rejected = diagnostics.rejected.saturating_add(1);
+    let mut key = format!("{format}: {reason}");
+    if !diagnostics.reasons.contains_key(&key) && diagnostics.reasons.len() >= 31 {
+        key = "other bounded reasons".into();
+    }
+    let count = diagnostics.reasons.entry(key).or_default();
+    *count = count.saturating_add(1);
 }
 
 fn png(
@@ -494,6 +596,9 @@ fn wav(
     cancel: &AtomicBool,
 ) -> Result<(u64, &'static str)> {
     let h = bounded_read(source, start, 12, end)?;
+    if &h[..4] != b"RIFF" || &h[8..12] != b"WAVE" {
+        return Err(invalid("Not a WAVE RIFF container"));
+    }
     let size = u64::from(le32(&h, 4)) + 8;
     if !(44..=MAX_CONTAINER).contains(&size) || start.checked_add(size).is_none_or(|n| n > end) {
         return Err(invalid("Invalid RIFF size"));
@@ -532,90 +637,54 @@ fn wav(
     }
     Ok((size,"WAVE RIFF length, chunk boundaries and basic format fields validated; audio samples are not decoded."))
 }
-fn zip(
-    source: &mut Source,
-    start: u64,
-    end: u64,
-    cancel: &AtomicBool,
-) -> Result<(u64, &'static str)> {
-    let end = end.min(start.saturating_add(MAX_CONTAINER));
-    let mut pos = start;
-    let mut files = 0u32;
-    // Follow actual local record sizes, so arbitrary PK sequences inside data
-    // cannot be mistaken for directory/end records. Data descriptors are not yet supported.
-    loop {
-        check_cancel(cancel)?;
-        let h = bounded_read(source, pos, 4, end)?;
-        if h == b"PK\x01\x02" {
-            break;
+
+#[cfg(test)]
+mod registry_window_tests {
+    use super::*;
+    #[test]
+    fn maximum_registry_signature_crosses_window_without_exceeding_read_cap() {
+        let mut wave = include_bytes!("../tests/fixtures/original.wav").to_vec();
+        wave.resize(2048, 0);
+        let size = wave.len() as u32;
+        wave[4..8].copy_from_slice(&(size - 8).to_le_bytes());
+        wave[40..44].copy_from_slice(&(size - 44).to_le_bytes());
+        wave[1024..1088].fill(0xab);
+        let overlap = 1024 + 64;
+        let prefix = READ_WINDOW - overlap - 1024 - 32;
+        let mut image = vec![0u8; prefix];
+        image.extend_from_slice(&wave);
+        struct Temporary(std::path::PathBuf);
+        impl Drop for Temporary {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
         }
-        if h != b"PK\x03\x04" {
-            return Err(invalid("ZIP missing local header"));
-        }
-        let h = bounded_read(source, pos, 30, end)?;
-        if le16(&h, 6) & 9 != 0 {
-            return Err(invalid(
-                "ZIP encrypted/descriptor streams require unsupported metadata",
-            ));
-        }
-        let compressed = u64::from(le32(&h, 18));
-        let extra = u64::from(le16(&h, 26)) + u64::from(le16(&h, 28));
-        if compressed == u64::from(u32::MAX) {
-            return Err(invalid("ZIP64 unsupported"));
-        }
-        pos = pos
-            .checked_add(30 + extra + compressed)
-            .ok_or_else(|| invalid("ZIP overflow"))?;
-        if pos > end {
-            return Err(invalid("ZIP payload exceeds range"));
-        }
-        files += 1;
+        let file = Temporary(std::env::temp_dir().join(format!(
+            "memory-regainer-max-signature-{}.img",
+            std::process::id()
+        )));
+        std::fs::write(&file.0, &image).unwrap();
+        let mut source = Source::open_with_size(&file.0, None).unwrap();
+        let rule = formats::Rule {
+            offset: 1024,
+            magic: vec![0xab; 64],
+            validator: "wav".into(),
+            max_bytes: 1024 * 1024,
+        };
+        let entries = scan_rules(
+            &mut source,
+            0,
+            image.len() as u64,
+            &["wav".into()],
+            &AtomicBool::new(false),
+            |_, _| {},
+            &mut |_| {},
+            &mut |_| {},
+            &[rule],
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].offset, prefix as u64);
+        assert_eq!(entries[0].size, wave.len() as u64);
     }
-    let directory = pos;
-    let mut directory_files = 0u32;
-    loop {
-        check_cancel(cancel)?;
-        let h = bounded_read(source, pos, 4, end)?;
-        if h == b"PK\x05\x06" {
-            break;
-        }
-        if h != b"PK\x01\x02" {
-            return Err(invalid("ZIP central directory invalid"));
-        }
-        let h = bounded_read(source, pos, 46, end)?;
-        let local = u64::from(le32(&h, 42));
-        if local >= directory - start
-            || bounded_read(source, start + local, 4, end)? != b"PK\x03\x04"
-        {
-            return Err(invalid("ZIP local-header pointer invalid"));
-        }
-        if le16(&h, 34) != 0 {
-            return Err(invalid("ZIP multi-disk unsupported"));
-        }
-        pos = pos
-            .checked_add(
-                46 + u64::from(le16(&h, 28)) + u64::from(le16(&h, 30)) + u64::from(le16(&h, 32)),
-            )
-            .ok_or_else(|| invalid("ZIP directory overflow"))?;
-        if pos > end {
-            return Err(invalid("ZIP directory exceeds range"));
-        }
-        directory_files += 1;
-    }
-    let e = bounded_read(source, pos, 22, end)?;
-    if le16(&e, 4) != 0
-        || le16(&e, 6) != 0
-        || u32::from(le16(&e, 8)) != files
-        || u32::from(le16(&e, 10)) != files
-        || directory_files != files
-        || u64::from(le32(&e, 12)) != pos - directory
-        || u64::from(le32(&e, 16)) != directory - start
-    {
-        return Err(invalid("ZIP end record does not match directory"));
-    }
-    let finish = pos + 22 + u64::from(le16(&e, 20));
-    if finish > end {
-        return Err(invalid("ZIP comment truncated"));
-    }
-    Ok((finish-start,"ZIP local/central directory boundaries, offsets and counts validated; payload CRC/decompression not checked. ZIP64, encryption and data-descriptor streams are not supported."))
 }

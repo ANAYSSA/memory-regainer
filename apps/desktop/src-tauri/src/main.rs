@@ -1,9 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod output_paths;
 mod platform;
 mod power;
 
 use base64::Engine;
-use recovery_core::{Entry, Partition, Progress, ScanOptions};
+use recovery_core::{Entry, Partition, Progress, ScanDiagnostics, ScanEvent, ScanOptions};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -41,6 +42,8 @@ struct FileReport {
     status: String,
     sha256: String,
     error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    original_path: Option<String>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct RecoveryReport {
@@ -70,6 +73,19 @@ struct JobStatus {
     #[serde(rename = "sleepInhibitionError")]
     sleep_inhibition_error: Option<String>,
     entries: Vec<Entry>,
+    #[serde(rename = "entryCount")]
+    entry_count: usize,
+    #[serde(rename = "resultsState")]
+    results_state: String,
+    #[serde(rename = "canPreview")]
+    can_preview: bool,
+    #[serde(rename = "canRecover")]
+    can_recover: bool,
+    #[serde(rename = "workerHeartbeatAgeSeconds")]
+    worker_heartbeat_age_seconds: f64,
+    #[serde(rename = "sourceSize")]
+    source_size: u64,
+    diagnostics: ScanDiagnostics,
     warnings: Vec<String>,
     partitions: Vec<Partition>,
     #[serde(rename = "methodNotes")]
@@ -79,6 +95,9 @@ struct JobStatus {
 }
 struct Job {
     view: JobStatus,
+    entries: Vec<Entry>,
+    last_activity: Instant,
+    source_valid: bool,
     source: RegisteredSource,
     options: ScanOptions,
     cancel: Arc<AtomicBool>,
@@ -91,6 +110,7 @@ struct AppState {
     destinations: Arc<Mutex<BTreeSet<PathBuf>>>,
     image_destinations: Arc<Mutex<BTreeSet<PathBuf>>>,
     busy: Arc<AtomicBool>,
+    recovery_busy: Arc<AtomicBool>,
     sessions: Arc<Mutex<PathBuf>>,
 }
 #[derive(Clone, Serialize, Deserialize)]
@@ -214,9 +234,13 @@ fn image_source(path: PathBuf) -> ApiResult<Source> {
 }
 #[tauri::command]
 async fn list_sources(state: State<'_, AppState>) -> ApiResult<Vec<Source>> {
-    let mut sources = platform::sources()?;
+    let mut sources = tauri::async_runtime::spawn_blocking(platform::sources)
+        .await
+        .map_err(|e| e.to_string())??;
+    let mut registered = lock(&state.sources)?;
+    registered.retain(|_, s| s.source.kind == "image");
     for source in &sources {
-        lock(&state.sources)?.insert(
+        registered.insert(
             source.id.clone(),
             RegisteredSource {
                 source: source.clone(),
@@ -225,7 +249,7 @@ async fn list_sources(state: State<'_, AppState>) -> ApiResult<Vec<Source>> {
         );
     }
     sources.extend(
-        lock(&state.sources)?
+        registered
             .values()
             .filter(|s| s.source.kind == "image")
             .map(|s| s.source.clone()),
@@ -249,54 +273,70 @@ fn begin(
     options: ScanOptions,
     total: u64,
 ) -> ApiResult<(String, Arc<AtomicBool>)> {
-    if state
-        .busy
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return Err("Another operation is running. Cancel it or wait for completion.".into());
+    let mut jobs = lock(&state.jobs)?;
+    let recovery = options.mode == "recover";
+    if recovery {
+        if state.recovery_busy.load(Ordering::SeqCst) {
+            return Err("A recovery operation is already running.".into());
+        }
+        if jobs.values().any(|j| {
+            j.view.status == "running"
+                && (j.view.mode == "image" || j.source.source.id != source.source.id)
+        }) {
+            return Err("Recovery may run alongside a scan of the same source only.".into());
+        }
+        state.recovery_busy.store(true, Ordering::SeqCst);
+    } else {
+        if state.busy.load(Ordering::SeqCst) || state.recovery_busy.load(Ordering::SeqCst) {
+            return Err("A scan, image copy or recovery is already running.".into());
+        }
+        state.busy.store(true, Ordering::SeqCst);
     }
     let key = id();
     let cancel = Arc::new(AtomicBool::new(false));
-    let result = lock(&state.jobs).map(|mut jobs| {
-        jobs.insert(
-            key.clone(),
-            Job {
-                view: JobStatus {
-                    id: key.clone(),
-                    mode: options.mode.clone(),
-                    source_name: source.source.name.clone(),
-                    source_id: source.source.id.clone(),
-                    status: "running".into(),
-                    progress: Progress {
-                        scanned: 0,
-                        total,
-                        found: 0,
-                        ..Default::default()
-                    },
-                    stage: "preparing".into(),
-                    elapsed_seconds: 0.0,
-                    progress_determinate: false,
-                    sleep_inhibited: false,
-                    sleep_inhibition_error: None,
-                    entries: Vec::new(),
-                    warnings: Vec::new(),
-                    partitions: Vec::new(),
-                    method_notes: Vec::new(),
-                    error: None,
-                    report: None,
+    jobs.insert(
+        key.clone(),
+        Job {
+            view: JobStatus {
+                id: key.clone(),
+                mode: options.mode.clone(),
+                source_name: source.source.name.clone(),
+                source_id: source.source.id.clone(),
+                source_size: source.source.size,
+                status: "running".into(),
+                progress: Progress {
+                    scanned: 0,
+                    total,
+                    found: 0,
+                    ..Default::default()
                 },
-                source,
-                options,
-                started: Instant::now(),
-                cancel: cancel.clone(),
+                stage: "preparing".into(),
+                elapsed_seconds: 0.0,
+                progress_determinate: false,
+                sleep_inhibited: false,
+                sleep_inhibition_error: None,
+                entries: Vec::new(),
+                entry_count: 0,
+                results_state: "scanning".into(),
+                can_preview: false,
+                can_recover: false,
+                worker_heartbeat_age_seconds: 0.0,
+                diagnostics: ScanDiagnostics::default(),
+                warnings: Vec::new(),
+                partitions: Vec::new(),
+                method_notes: Vec::new(),
+                error: None,
+                report: None,
             },
-        )
-    });
-    if result.is_err() {
-        state.busy.store(false, Ordering::SeqCst);
-        result?;
-    }
+            entries: Vec::new(),
+            last_activity: Instant::now(),
+            source_valid: true,
+            source,
+            options,
+            started: Instant::now(),
+            cancel: cancel.clone(),
+        },
+    );
     Ok((key, cancel))
 }
 fn finish(state: &AppState, key: &str, result: ApiResult<()>, cancel: &AtomicBool) {
@@ -313,12 +353,24 @@ fn finish(state: &AppState, key: &str, result: ApiResult<()>, cancel: &AtomicBoo
             job.view.error = result.err();
             job.view.elapsed_seconds = job.started.elapsed().as_secs_f64();
             job.view.sleep_inhibited = false;
+            job.view.results_state = if !job.source_valid {
+                "invalid-source"
+            } else if job.view.status == "completed" {
+                "complete"
+            } else {
+                "partial"
+            }
+            .into();
             if job.view.status == "completed" {
                 job.view.stage = "finished".into();
             }
+            if job.view.mode == "recover" {
+                state.recovery_busy.store(false, Ordering::SeqCst);
+            } else {
+                state.busy.store(false, Ordering::SeqCst);
+            }
         }
     }
-    state.busy.store(false, Ordering::SeqCst);
 }
 fn update(state: &AppState, key: &str, p: Progress) {
     if let Ok(mut jobs) = lock(&state.jobs) {
@@ -327,14 +379,62 @@ fn update(state: &AppState, key: &str, p: Progress) {
                 job.view.stage = p.stage.clone();
                 job.view.progress_determinate = !p.indeterminate && p.total > 0;
             }
+            job.last_activity = Instant::now();
             job.view.progress = p;
+            if matches!(job.view.mode.as_str(), "quick" | "deep" | "advanced") {
+                job.view.progress.found = job.entries.len();
+            }
         }
     }
 }
+fn publish_scan_event(state: &AppState, key: &str, event: ScanEvent) {
+    if let Ok(mut jobs) = lock(&state.jobs) {
+        if let Some(job) = jobs.get_mut(key) {
+            job.last_activity = Instant::now();
+            match event {
+                ScanEvent::Entry(entry) => {
+                    job.entries.push(entry);
+                    job.view.progress.found = job.entries.len();
+                }
+                ScanEvent::Partition(part) => job.view.partitions.push(part),
+                ScanEvent::Warning(note) => {
+                    if !job.view.warnings.contains(&note) {
+                        job.view.warnings.push(note);
+                    }
+                }
+                ScanEvent::MethodNote(note) => {
+                    if !job.view.method_notes.contains(&note) {
+                        job.view.method_notes.push(note);
+                    }
+                }
+                ScanEvent::Diagnostics(value) => job.view.diagnostics = value,
+            }
+        }
+    }
+}
+fn verify_job_source(state: &AppState, key: &str, source: &RegisteredSource) -> ApiResult<()> {
+    let result = verify_source(source);
+    if result.is_err() {
+        if let Ok(mut jobs) = lock(&state.jobs) {
+            for (id, job) in jobs.iter_mut() {
+                if id == key || job.source.source.path == source.source.path {
+                    job.source_valid = false;
+                    job.view.results_state = "invalid-source".into();
+                    if matches!(job.view.mode.as_str(), "quick" | "deep" | "advanced") {
+                        job.cancel.store(true, Ordering::Relaxed);
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
 fn set_stage(state: &AppState, key: &str, stage: &str, determinate: bool) {
     if let Ok(mut jobs) = lock(&state.jobs) {
         if let Some(job) = jobs.get_mut(key) {
             job.view.stage = stage.into();
+            job.last_activity = Instant::now();
             job.view.progress_determinate = determinate;
         }
     }
@@ -389,6 +489,9 @@ fn scan_start(state: AppState, source_id: String, mut options: ScanOptions) -> A
     if !["quick", "deep", "advanced"].contains(&options.mode.as_str()) {
         return Err("Unknown scan mode".into());
     }
+    if options.mode == "quick" {
+        options.mode = "deep".into();
+    }
     let mut source = lock(&state.sources)?
         .get(&source_id)
         .cloned()
@@ -412,44 +515,99 @@ fn scan_start(state: AppState, source_id: String, mut options: ScanOptions) -> A
             .ok_or("Job lost")?
             .source
             .stamp = source.stamp.clone();
-        let result = recovery_core::scan_with_size(
+        let result = recovery_core::scan_with_events(
             Path::new(&source.source.path),
             &options,
             Some(source.source.size),
             cancel,
             |p| update(state, key, p),
+            |event| publish_scan_event(state, key, event),
         )
         .map_err(|e| e.to_string())?;
         set_stage(state, key, "verifying", false);
-        verify_source(&source)?;
+        verify_job_source(state, key, &source)?;
         let mut jobs = lock(&state.jobs)?;
         let job = jobs.get_mut(key).ok_or("Job lost")?;
-        job.view.entries = result.entries;
+        job.entries = result.entries;
+        job.view.diagnostics = result.diagnostics;
         job.view.warnings = result.warnings;
         job.view.partitions = result.partitions;
         job.view.method_notes = result.method_notes;
         job.view.progress.scanned = result.bytes_scanned;
-        job.view.progress.found = job.view.entries.len();
+        job.view.progress.found = job.entries.len();
         Ok(())
     });
     Ok(job_id)
+}
+fn job_snapshot(job: &Job) -> JobStatus {
+    // view.entries is always empty: result pages never clone the entire index.
+    let mut view = job.view.clone();
+    view.entry_count = job.entries.len();
+    view.worker_heartbeat_age_seconds = job.last_activity.elapsed().as_secs_f64();
+    let scan = matches!(view.mode.as_str(), "quick" | "deep" | "advanced");
+    let available = scan
+        && job.source_valid
+        && !job.entries.is_empty()
+        && matches!(view.status.as_str(), "running" | "completed" | "cancelled");
+    view.can_preview = available;
+    view.can_recover = available;
+    if view.status == "running" {
+        view.elapsed_seconds = job.started.elapsed().as_secs_f64();
+        if job.cancel.load(Ordering::Relaxed) {
+            view.stage = "cancelling".into();
+            view.progress_determinate = false;
+        }
+    }
+    view
 }
 #[tauri::command]
 fn job_status(state: State<'_, AppState>, job_id: String) -> ApiResult<JobStatus> {
     lock(&state.jobs)?
         .get(&job_id)
-        .map(|j| {
-            let mut view = j.view.clone();
-            if view.status == "running" {
-                view.elapsed_seconds = j.started.elapsed().as_secs_f64();
-                if j.cancel.load(Ordering::Relaxed) {
-                    view.stage = "cancelling".into();
-                    view.progress_determinate = false;
-                }
-            }
-            view
-        })
+        .map(job_snapshot)
         .ok_or("Unknown job".into())
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ResultPage {
+    entries: Vec<Entry>,
+    next: usize,
+    total: usize,
+    has_more: bool,
+}
+fn result_page(
+    state: &AppState,
+    job_id: &str,
+    after: usize,
+    limit: usize,
+) -> ApiResult<ResultPage> {
+    let jobs = lock(&state.jobs)?;
+    let job = jobs.get(job_id).ok_or("Unknown scan")?;
+    if after > job.entries.len() {
+        return Err("Invalid result cursor".into());
+    }
+    let end = after
+        .saturating_add(limit.clamp(1, 500))
+        .min(job.entries.len());
+    Ok(ResultPage {
+        entries: job.entries[after..end].to_vec(),
+        next: end,
+        total: job.entries.len(),
+        has_more: end < job.entries.len(),
+    })
+}
+#[tauri::command]
+fn job_results(
+    state: State<'_, AppState>,
+    job_id: String,
+    after: usize,
+    limit: Option<usize>,
+) -> ApiResult<ResultPage> {
+    result_page(state.inner(), &job_id, after, limit.unwrap_or(500))
+}
+#[tauri::command]
+fn list_formats() -> Vec<recovery_core::FormatSpec> {
+    recovery_core::supported_formats()
 }
 #[tauri::command]
 fn cancel_job(state: State<'_, AppState>, job_id: String) -> ApiResult<()> {
@@ -467,11 +625,10 @@ fn entry_for(
 ) -> ApiResult<(RegisteredSource, Entry)> {
     let jobs = lock(&state.jobs)?;
     let job = jobs.get(job_id).ok_or("Unknown scan")?;
-    if job.view.status != "completed" {
-        return Err("Wait for a completed scan".into());
+    if !job_snapshot(job).can_preview {
+        return Err("No validated results are available from this source.".into());
     }
     let entry = job
-        .view
         .entries
         .iter()
         .find(|e| e.id == entry_id)
@@ -486,7 +643,7 @@ async fn preview(
     entry_id: String,
 ) -> ApiResult<Preview> {
     let (source, entry) = entry_for(&state, &job_id, &entry_id)?;
-    verify_source(&source)?;
+    verify_job_source(state.inner(), &job_id, &source)?;
     let bytes = recovery_core::read_entry_with_size(
         Path::new(&source.source.path),
         &entry,
@@ -642,19 +799,40 @@ fn copy_entry(
     index: usize,
     cancel: &AtomicBool,
 ) -> ApiResult<(String, u64, String)> {
-    copy_entry_with_progress(source, entry, dir, index, cancel, |_, _, _| {})
+    copy_entry_with_progress(source, entry, dir, index, None, cancel, |_, _, _| {})
 }
 fn copy_entry_with_progress(
     source: &Source,
     entry: &Entry,
     dir: &Path,
     index: usize,
+    relative: Option<&Path>,
     cancel: &AtomicBool,
     mut progress: impl FnMut(&str, u64, u64),
 ) -> ApiResult<(String, u64, String)> {
-    let name = format!("{:06}_{}", index + 1, safe_name(&entry.name));
-    let tmp = dir.join(format!(".{index}.partial"));
-    let target = dir.join(&name);
+    let fallback = PathBuf::from(format!("{:06}_{}", index + 1, safe_name(&entry.name)));
+    let relative = relative.unwrap_or(&fallback);
+    let mut parent = dir.to_path_buf();
+    if let Some(dirs) = relative.parent() {
+        for component in dirs.components() {
+            let std::path::Component::Normal(name) = component else {
+                return Err("Invalid output path".into());
+            };
+            parent.push(name);
+            match fs::symlink_metadata(&parent) {
+                Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {}
+                Ok(_) => return Err("Output folder was replaced by a non-directory".into()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => private_directory(&parent)?,
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+    }
+    let name = relative.to_string_lossy().replace('\\', "/");
+    let tmp = parent.join(format!(".{index}.partial"));
+    let target = dir.join(relative);
+    if target.exists() {
+        return Err("Output file already exists; no files were overwritten".into());
+    }
     let result = (|| {
         let mut f = OpenOptions::new()
             .write(true)
@@ -701,18 +879,25 @@ async fn recover(
     entry_ids: Vec<String>,
     destination: String,
 ) -> ApiResult<String> {
+    recovery_start(state.inner().clone(), job_id, entry_ids, destination)
+}
+fn recovery_start(
+    state: AppState,
+    job_id: String,
+    entry_ids: Vec<String>,
+    destination: String,
+) -> ApiResult<String> {
     let (source, options, entries) = {
         let jobs = lock(&state.jobs)?;
         let job = jobs.get(&job_id).ok_or("Unknown scan")?;
-        if job.view.status != "completed" {
-            return Err("A completed scan is required".into());
+        if !job_snapshot(job).can_recover {
+            return Err("No validated results are available for recovery.".into());
         }
         let ids: BTreeSet<_> = entry_ids.into_iter().collect();
         if ids.is_empty() {
             return Err("Select at least one result".into());
         }
         let entries: Vec<_> = job
-            .view
             .entries
             .iter()
             .filter(|e| ids.contains(&e.id))
@@ -742,11 +927,11 @@ async fn recover(
         },
         total,
     )?;
+    let scan_id = job_id;
     let job_id = key.clone();
-    let state = state.inner().clone();
     spawn_job(state, key, cancel, move |state, key, cancel| {
         set_stage(state, key, "opening-source", false);
-        verify_source(&source)?;
+        verify_job_source(state, &scan_id, &source)?;
         platform::ensure_separate_device(&source.source, &dest)?;
         platform::check_free_space(&dest, total)?;
         let dir = dest.join(format!("Memory-Regainer-{key}"));
@@ -758,12 +943,13 @@ async fn recover(
             destination: dir.to_string_lossy().into_owned(),
             files: Vec::new(),
         };
+        let paths = output_paths::plan(&entries);
         let mut processed = 0;
         for (index, entry) in entries.iter().enumerate() {
             if cancel.load(Ordering::Relaxed) {
                 break;
             }
-            if let Err(error) = verify_source(&source) {
+            if let Err(error) = verify_job_source(state, &scan_id, &source) {
                 for pending in &entries[index..] {
                     report.failed += 1;
                     report.files.push(FileReport {
@@ -771,31 +957,40 @@ async fn recover(
                         status: "not-recovered".into(),
                         sha256: String::new(),
                         error: Some(error.clone()),
+                        original_path: pending.relative_path.clone(),
                     });
                 }
                 break;
             }
-            match copy_entry_with_progress(
-                &source.source,
-                entry,
-                &dir,
-                index,
-                cancel,
-                |stage, n, _| {
-                    update(
-                        state,
-                        key,
-                        Progress {
-                            scanned: processed + if stage == "recovering" { n } else { entry.size },
-                            total,
-                            found: report.recovered,
-                            stage: stage.into(),
-                            indeterminate: stage == "verifying",
-                            ..Default::default()
+            let copied = paths[index]
+                .as_ref()
+                .map_err(Clone::clone)
+                .and_then(|relative| {
+                    copy_entry_with_progress(
+                        &source.source,
+                        entry,
+                        &dir,
+                        index,
+                        Some(relative),
+                        cancel,
+                        |stage, n, _| {
+                            update(
+                                state,
+                                key,
+                                Progress {
+                                    scanned: processed
+                                        + if stage == "recovering" { n } else { entry.size },
+                                    total,
+                                    found: report.recovered,
+                                    stage: stage.into(),
+                                    indeterminate: stage == "verifying",
+                                    ..Default::default()
+                                },
+                            );
                         },
-                    );
-                },
-            ) {
+                    )
+                });
+            match copied {
                 Ok((name, n, sha256)) => {
                     report.recovered += 1;
                     report.bytes += n;
@@ -804,6 +999,7 @@ async fn recover(
                         status: "verified-copy".into(),
                         sha256,
                         error: None,
+                        original_path: entry.relative_path.clone(),
                     });
                 }
                 Err(e) => {
@@ -813,6 +1009,7 @@ async fn recover(
                         status: "failed".into(),
                         sha256: String::new(),
                         error: Some(e),
+                        original_path: entry.relative_path.clone(),
                     });
                 }
             }
@@ -1009,6 +1206,7 @@ async fn create_image(
                 .into(),
                 sha256: expected,
                 error: error.clone(),
+                original_path: None,
             }],
         };
         set_stage(state, key, "writing-report", false);
@@ -1048,7 +1246,7 @@ fn manifest(state: &AppState, key: &str) -> ApiResult<Manifest> {
         source: job.source.source.clone(),
         stamp: job.source.stamp.clone(),
         options: job.options.clone(),
-        count: job.view.entries.len(),
+        count: job.entries.len(),
         date: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -1145,7 +1343,11 @@ async fn load_session(state: State<'_, AppState>, id: String) -> ApiResult<Strin
         return Err("Source image changed since this session; open it and scan again".into());
     }
     let source = register(&state, source)?;
-    scan_start(state.inner().clone(), source.id, m.options)
+    let mut options = m.options;
+    if options.mode == "quick" {
+        options.mode = "deep".into();
+    }
+    scan_start(state.inner().clone(), source.id, options)
 }
 fn main() {
     tauri::Builder::default()
@@ -1158,6 +1360,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             list_sources,
+            list_formats,
+            job_results,
             pick_source,
             start_scan,
             job_status,
@@ -1310,6 +1514,7 @@ mod tests {
                 offset: 0,
                 length: payload.len() as u64,
             }],
+            ..Default::default()
         };
         let cancel = AtomicBool::new(false);
         let (n1, count, hash) = copy_entry(&source, &e, &out, 0, &cancel).unwrap();
@@ -1323,6 +1528,150 @@ mod tests {
         assert!(copy_entry(&source, &e, &out, 2, &cancel).is_err());
         assert!(!out.join(".2.partial").exists());
         fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn live_results_are_paged_and_recovery_does_not_stop_the_scan() {
+        let root = std::env::temp_dir().join(format!("mr-live-{}", id()));
+        private_directory(&root).unwrap();
+        let path = root.join("source.img");
+        let payload = b"validated bytes published before scan completion";
+        fs::write(&path, payload).unwrap();
+        let source = image_source(path.clone()).unwrap();
+        let registered = RegisteredSource {
+            stamp: fingerprint(&source).unwrap(),
+            source: source.clone(),
+        };
+        let state = AppState::default();
+        let destination = root.join("destination");
+        private_directory(&destination).unwrap();
+        let destination = destination.canonicalize().unwrap();
+        state
+            .destinations
+            .lock()
+            .unwrap()
+            .insert(destination.clone());
+        let (scan, scan_cancel) =
+            begin(&state, registered, ScanOptions::default(), source.size).unwrap();
+        let entry = Entry {
+            id: "live-file".into(),
+            name: "clip.mp4".into(),
+            kind: "mp4".into(),
+            relative_path: Some("Family/Holiday/clip.mp4".into()),
+            partition: Some("USB".into()),
+            size: source.size,
+            extents: vec![recovery_core::Extent {
+                offset: 0,
+                length: source.size,
+            }],
+            deletion_status: "deleted".into(),
+            ..Default::default()
+        };
+        publish_scan_event(&state, &scan, ScanEvent::Entry(entry));
+        {
+            let jobs = state.jobs.lock().unwrap();
+            let view = job_snapshot(&jobs[&scan]);
+            assert_eq!(view.status, "running");
+            assert!(view.can_recover);
+            assert!(view.can_preview);
+            assert!(view.entries.is_empty());
+            assert_eq!(view.entry_count, 1);
+        }
+        let page = result_page(&state, &scan, 0, usize::MAX).unwrap();
+        assert_eq!(page.entries.len(), 1);
+        assert_eq!(page.next, 1);
+        assert!(!page.has_more);
+        assert!(result_page(&state, &scan, 2, 500).is_err());
+        let recovery = recovery_start(
+            state.clone(),
+            scan.clone(),
+            vec!["live-file".into()],
+            destination.to_string_lossy().into_owned(),
+        )
+        .unwrap();
+        let deadline = Instant::now() + std::time::Duration::from_secs(10);
+        while state.recovery_busy.load(Ordering::SeqCst) && Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let jobs = state.jobs.lock().unwrap();
+        assert_eq!(jobs[&scan].view.status, "running");
+        assert!(!scan_cancel.load(Ordering::Relaxed));
+        assert!(state.busy.load(Ordering::SeqCst));
+        let recovery = &jobs[&recovery];
+        assert_eq!(
+            recovery.view.status, "completed",
+            "{:?}",
+            recovery.view.error
+        );
+        let report = recovery.view.report.as_ref().unwrap();
+        assert_eq!(report.recovered, 1);
+        assert_eq!(
+            report.files[0].original_path.as_deref(),
+            Some("Family/Holiday/clip.mp4")
+        );
+        assert_eq!(
+            fs::read(Path::new(&report.destination).join(&report.files[0].name)).unwrap(),
+            payload
+        );
+        assert_eq!(fs::read(&path).unwrap(), payload);
+        drop(jobs);
+        finish(&state, &scan, Ok(()), &scan_cancel);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn scan_and_copy_have_independent_cancellation_and_busy_slots() {
+        let state = AppState::default();
+        let (scan, scan_cancel) =
+            begin(&state, test_source(), ScanOptions::default(), 1024).unwrap();
+        let options = ScanOptions {
+            mode: "recover".into(),
+            ..Default::default()
+        };
+        let (copy, copy_cancel) = begin(&state, test_source(), options.clone(), 1024).unwrap();
+        assert!(begin(&state, test_source(), options, 1024).is_err());
+        assert!(begin(&state, test_source(), ScanOptions::default(), 1024).is_err());
+        scan_cancel.store(true, Ordering::Relaxed);
+        finish(&state, &scan, Err("cancelled".into()), &scan_cancel);
+        assert!(!copy_cancel.load(Ordering::Relaxed));
+        assert!(!state.busy.load(Ordering::SeqCst));
+        assert!(state.recovery_busy.load(Ordering::SeqCst));
+        assert!(begin(&state, test_source(), ScanOptions::default(), 1024).is_err());
+        finish(&state, &copy, Ok(()), &copy_cancel);
+        assert!(!state.recovery_busy.load(Ordering::SeqCst));
+    }
+    #[test]
+    fn partial_results_survive_cancellation_but_failed_sources_disable_recovery() {
+        let state = AppState::default();
+        let (scan, cancel) = begin(&state, test_source(), ScanOptions::default(), 1024).unwrap();
+        for i in 0..502 {
+            publish_scan_event(
+                &state,
+                &scan,
+                ScanEvent::Entry(Entry {
+                    id: i.to_string(),
+                    ..Default::default()
+                }),
+            );
+        }
+        assert_eq!(
+            result_page(&state, &scan, 0, usize::MAX)
+                .unwrap()
+                .entries
+                .len(),
+            500
+        );
+        cancel.store(true, Ordering::Relaxed);
+        finish(&state, &scan, Err("cancelled".into()), &cancel);
+        assert!(job_snapshot(&state.jobs.lock().unwrap()[&scan]).can_recover);
+        assert_eq!(
+            result_page(&state, &scan, 500, 500).unwrap().entries.len(),
+            2
+        );
+        assert!(verify_job_source(&state, &scan, &test_source()).is_err());
+        let jobs = state.jobs.lock().unwrap();
+        let view = job_snapshot(&jobs[&scan]);
+        assert!(!view.can_recover);
+        assert_eq!(view.results_state, "invalid-source");
+        assert_eq!(view.entry_count, 502);
     }
     #[test]
     fn unknown_device_mapping_fails_closed_and_space_is_checked() {

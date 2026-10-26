@@ -3,14 +3,15 @@
 //! No proprietary recovery implementation is used. Inactive records are undefined
 //! by the filesystem specification: their former active checksum is an additional
 //! recovery heuristic, not a guarantee. Only clean single-FAT volumes and intact,
-//! fully initialized NoFatChain streams in the live directory tree are supported.
+//! fully initialized streams are supported. Deleted streams require NoFatChain and
+//! currently free clusters; surviving directory ancestry remains tentative.
 use crate::{check_cancel, le16, le32, le64, Entry, Error, Extent, Partition, Result, Source};
 use std::{
     collections::{HashSet, VecDeque},
     sync::atomic::AtomicBool,
 };
 
-pub(crate) const METHOD_NOTE: &str = "exFAT undelete is limited to intact inactive contiguous streams in live directories on clean single-FAT revision 1.00 volumes. Deleted directories, TexFAT, fragmented files and partial initialization are unsupported.";
+pub(crate) const METHOD_NOTE: &str = "exFAT metadata scanning supports existing allocated streams, including FAT chains, on clean single-FAT revision 1.00 volumes. Deleted files and directories require intact contiguous streams, reconstructed entry checksums and currently free clusters; deleted ancestry is tentative. TexFAT, fragmented deleted streams and partial initialization are unsupported. Content bytes are not decoded or proven unchanged.";
 
 const MAX_DIRECTORY: u64 = 256 * 1024 * 1024;
 const PAGE: u64 = 64 * 1024;
@@ -418,42 +419,160 @@ fn root_bitmap(
     Ok(bitmap)
 }
 
+fn file_extents(
+    source: &mut Source,
+    geo: &Geometry,
+    bitmap: &mut Bitmap,
+    file: &FileSet,
+    deleted: bool,
+    cancel: &AtomicBool,
+) -> Result<Vec<Extent>> {
+    if file.valid != file.length {
+        return Err(invalid("partly initialized streams are unsupported"));
+    }
+    if file.length == 0 {
+        if file.first != 0 {
+            return Err(invalid("zero-length stream has a cluster"));
+        }
+        return Ok(vec![]);
+    }
+    let count = file.length.div_ceil(geo.cluster_bytes);
+    if count > u64::from(geo.clusters) || (deleted && !file.contiguous) {
+        return Err(invalid(
+            "stream exceeds heap or deleted allocation chain is unavailable",
+        ));
+    }
+    if file.contiguous && u64::from(file.first) + count > u64::from(geo.clusters) + 2 {
+        return Err(invalid("contiguous stream exceeds heap"));
+    }
+    let mut extents: Vec<Extent> = Vec::new();
+    let mut cluster = file.first;
+    let mut remaining = file.length;
+    let mut anchor = cluster;
+    let mut power = 1u64;
+    let mut distance = 0u64;
+    for step in 0..count {
+        check_cancel(cancel)?;
+        let offset = geo.offset(cluster)?;
+        if bitmap.allocated(source, geo, cluster, cancel)? == deleted {
+            return Err(invalid(if deleted {
+                "deleted stream is currently allocated"
+            } else {
+                "existing stream has a free allocation-bitmap cluster"
+            }));
+        }
+        let length = remaining.min(geo.cluster_bytes);
+        if let Some(previous) = extents.last_mut().filter(|e| e.offset + e.length == offset) {
+            previous.length += length;
+        } else {
+            if extents.len() >= 1_000_000 {
+                return Err(invalid(
+                    "stream exceeds the one-million-extent safety limit",
+                ));
+            }
+            extents.push(Extent { offset, length });
+        }
+        remaining -= length;
+        if file.contiguous {
+            cluster += 1;
+        } else {
+            let next = geo.next(source, cluster)?;
+            if step + 1 == count {
+                if next != u32::MAX {
+                    return Err(invalid(
+                        "file FAT chain exceeds its stream length or contains a cycle",
+                    ));
+                }
+            } else {
+                geo.offset(next)?;
+                distance += 1;
+                if next == anchor {
+                    return Err(invalid("file FAT chain contains a cycle"));
+                }
+                if distance == power {
+                    anchor = next;
+                    power *= 2;
+                    distance = 0;
+                }
+                cluster = next;
+            }
+        }
+    }
+    Ok(extents)
+}
+
+struct Directory {
+    first: u32,
+    length: Option<u64>,
+    contiguous: bool,
+    path: String,
+    deleted: bool,
+}
+
 pub(crate) fn scan_deleted(
     source: &mut Source,
     part: &Partition,
     cancel: &AtomicBool,
     progress: &mut impl FnMut(u64, usize),
+    on_entry: &mut impl FnMut(&Entry),
 ) -> Result<(Vec<Entry>, Vec<String>)> {
     let geo = Geometry::parse(source, part, cancel)?;
     let root = geo.chain(source, geo.root, None, false, MAX_DIRECTORY, cancel)?;
     let mut bitmap = root_bitmap(source, &geo, &root, cancel)?;
-    let mut queue = VecDeque::from([(geo.root, None, false, String::from("/"))]);
+    let mut queue = VecDeque::from([Directory {
+        first: geo.root,
+        length: None,
+        contiguous: false,
+        path: String::new(),
+        deleted: false,
+    }]);
     let mut visited = HashSet::new();
     let mut entries = Vec::new();
     let mut notices = Vec::new();
     let mut rejected = 0u64;
     let mut malformed = 0u64;
-    while let Some((first, length, contiguous, path)) = queue.pop_front() {
+    while let Some(Directory {
+        first,
+        length,
+        contiguous,
+        path,
+        deleted: inherited_deleted,
+    }) = queue.pop_front()
+    {
         check_cancel(cancel)?;
+        let directory = format!("/{path}");
         if !visited.insert(first) {
+            notices.push(format!("Directory {directory} skipped: its first cluster was already visited (alias or cycle)."));
             continue;
         }
         let chain = match geo.chain(source, first, length, contiguous, MAX_DIRECTORY, cancel) {
             Ok(chain) => chain,
             Err(Error::Invalid(s)) => {
-                notices.push(format!("Directory {path} skipped: {s}"));
+                notices.push(format!("Directory {directory} skipped: {s}"));
                 continue;
             }
             Err(e) => return Err(e),
         };
-        if let Err(e) = bitmap.verify_metadata(source, &geo, &chain, cancel) {
-            match e {
-                Error::Invalid(s) => {
-                    notices.push(format!("Directory {path} skipped: {s}"));
-                    continue;
-                }
-                other => return Err(other),
+        let mut allocation_valid = true;
+        for cluster in &chain.clusters {
+            if bitmap.allocated(source, &geo, *cluster, cancel)? == inherited_deleted {
+                allocation_valid = false;
+                break;
             }
+        }
+        if !allocation_valid {
+            notices.push(format!(
+                "Directory {directory} skipped: allocation bitmap {}.",
+                if inherited_deleted {
+                    "marks a deleted directory cluster currently allocated"
+                } else {
+                    "marks a live metadata cluster as free"
+                }
+            ));
+            continue;
+        }
+        if inherited_deleted {
+            notices.push(format!("Deleted directory {directory}: intact contiguous length and free clusters were verified; surviving records and original ancestry remain tentative."));
         }
         let mut offset = 0;
         let mut pending = Vec::<[u8; 32]>::new();
@@ -502,54 +621,83 @@ pub(crate) fn scan_deleted(
                         continue;
                     }
                 };
+                let deleted = file.deleted || inherited_deleted;
                 if file.directory {
-                    if !file.deleted
-                        && file.length > 0
+                    if file.length > 0
                         && file.length <= MAX_DIRECTORY
                         && file.valid == file.length
                         && file.length.is_multiple_of(geo.cluster_bytes)
+                        && (!deleted || file.contiguous)
                     {
-                        queue.push_back((
-                            file.first,
-                            Some(file.length),
-                            file.contiguous,
-                            format!("{path}{}/", file.name),
-                        ));
+                        let next = Directory {
+                            first: file.first,
+                            length: Some(file.length),
+                            contiguous: file.contiguous,
+                            path: format!("{path}{}/", file.name),
+                            deleted,
+                        };
+                        if deleted {
+                            queue.push_back(next);
+                        } else {
+                            queue.push_front(next);
+                        }
+                    } else {
+                        notices.push(format!("Directory {directory}{} skipped: invalid/unsupported length, partial initialization, or deleted FAT-chain allocation.", file.name));
                     }
                     continue;
                 }
-                if !file.deleted {
-                    continue;
-                }
-                let count = file.length.div_ceil(geo.cluster_bytes);
-                if !file.contiguous
-                    || file.valid != file.length
-                    || file.first < 2
-                    || u64::from(file.first)
-                        .checked_add(count)
-                        .is_none_or(|n| n > u64::from(geo.clusters) + 2)
+                let extents = match file_extents(source, &geo, &mut bitmap, &file, deleted, cancel)
                 {
-                    rejected += 1;
-                    continue;
-                }
-                let mut free = true;
-                for n in 0..count {
-                    if bitmap.allocated(source, &geo, file.first + n as u32, cancel)? {
-                        free = false;
-                        break;
+                    Ok(extents) => extents,
+                    Err(Error::Invalid(reason)) => {
+                        notices.push(format!("exFAT record {directory}{} at byte {entry_offset} skipped: {reason}. Other independent records were retained.", file.name));
+                        rejected += 1;
+                        continue;
                     }
-                }
-                if !free {
-                    rejected += 1;
-                    continue;
-                }
-                let at = geo.offset(file.first)?;
+                    Err(error) => return Err(error),
+                };
                 let kind = file
                     .name
                     .rsplit_once('.')
                     .map_or("unknown", |(_, kind)| kind)
                     .to_ascii_lowercase();
-                entries.push(Entry{id:format!("exfat-{:x}-{entry_offset:x}",geo.base),name:file.name,kind,size:file.length,offset:at,confidence:"low".into(),method:"exfat-undelete".into(),notes:vec![format!("Inactive exFAT entry set in {path}; checksum matches when former InUse bits are reconstructed."),"NoFatChain stream with valid length equal to data length; the current allocation bitmap marks all content clusters free.".into(),"Inactive records are not authoritative metadata. Freed clusters may have been overwritten; inspect the output. NameHash is not independently checked against the up-case table.".into()],extents:vec![Extent{offset:at,length:file.length}]});
+                let mut notes = vec![if file.deleted {
+                    format!("Inactive exFAT entry set in {directory}; checksum matches when former InUse bits are reconstructed.")
+                } else {
+                    format!("Active exFAT entry set in {directory}; entry checksum and declared stream allocation were validated.")
+                }];
+                if deleted {
+                    notes.push("NoFatChain stream with valid length equal to data length; the current allocation bitmap marks all content clusters free. Inactive records are not authoritative metadata; freed clusters may have been overwritten.".into());
+                } else {
+                    notes.push("All content clusters are currently allocated; the complete FAT chain or NoFatChain range matches the declared length. Content is not decoded; a changing mounted filesystem can invalidate this snapshot.".into());
+                }
+                if inherited_deleted {
+                    notes.push("The parent directory is deleted; surviving child status and original ancestry are inferred and tentative.".into());
+                }
+                notes.push(
+                    "NameHash is not independently checked against the up-case table.".into(),
+                );
+                let entry = Entry {
+                    id: format!("exfat-{:x}-{entry_offset:x}", geo.base),
+                    relative_path: Some(format!("{path}{}", file.name)),
+                    partition: Some(part.name.clone()),
+                    deletion_status: if deleted { "deleted" } else { "existing" }.into(),
+                    name: file.name,
+                    kind,
+                    size: file.length,
+                    offset: extents.first().map_or(entry_offset, |e| e.offset),
+                    confidence: if deleted { "low" } else { "high" }.into(),
+                    method: if deleted {
+                        "exfat-undelete"
+                    } else {
+                        "exfat-metadata"
+                    }
+                    .into(),
+                    notes,
+                    extents,
+                };
+                on_entry(&entry);
+                entries.push(entry);
             }
             progress(block.len() as u64, entries.len());
             check_cancel(cancel)?;
@@ -560,7 +708,7 @@ pub(crate) fn scan_deleted(
         }
     }
     if rejected > 0 {
-        notices.push(format!("{rejected} deleted exFAT streams skipped: fragmented, partly initialized, outside the heap, or currently allocated."));
+        notices.push(format!("{rejected} exFAT streams skipped: unsupported, partly initialized, outside the heap, invalid allocation chains, or allocation-bitmap conflicts (deleted content currently allocated or live content free)."));
     }
     if malformed > 0 {
         notices.push(format!("{malformed} exFAT entry sets skipped because their shape, checksum, or fields were invalid/unsupported."));

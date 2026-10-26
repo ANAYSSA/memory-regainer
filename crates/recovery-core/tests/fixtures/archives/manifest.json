@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "license": "GPL-3.0-or-later",
+  "origin": "Original synthetic ZIP/DOCX and documented stored RAR4/RAR5 framing",
+  "files": [
+    {
+      "file": "classic.zip",
+      "bytes": 162,
+      "sha256": "db27b3bac7f89a7715f131f596fe285bfc22c50ed79e8732d7e87258941f1bb0"
+    },
+    {
+      "file": "descriptor.zip",
+      "bytes": 178,
+      "sha256": "e1df8e76dfc9442e7170323305fbc64a15cc73cce22205f11e68a2c8d8d5b7c4"
+    },
+    {
+      "file": "descriptor-zip64.zip",
+      "bytes": 206,
+      "sha256": "61d2f4bb8001bbf8a84ee5fb756cf686d472b5271781ea57d4a6ccb2dad7175e"
+    },
+    {
+      "file": "descriptor-unsigned.zip",
+      "bytes": 174,
+      "sha256": "9ddd3c706e1b236969a6da1a3188747ad1333f000ac92ac31f8a7bd6eec6d69d"
+    },
+    {
+      "file": "full-zip64.zip",
+      "bytes": 284,
+      "sha256": "53d40c716a48726161c4ae7330d153ef2dff613df483135297dbaa015d7381b6"
+    },
+    {
+      "file": "original.docx",
+      "bytes": 848,
+      "sha256": "62d548623948b2d01e2c77ca3b226baca7be5df5c89a530ed17c2743d7a71db9"
+    },
+    {
+      "file": "descriptor.docx",
+      "bytes": 896,
+      "sha256": "57ae20a139126416f8ffc472f6774377f650185a6ce4cd60cc6659af30fb78e9"
+    },
+    {
+      "file": "names-only.zip",
+      "bytes": 413,
+      "sha256": "87fcbee8d0ee4bb4b8a7dd5879bf1e98ce4fb48fb51d45ca3304a47a26624153"
+    },
+    {
+      "file": "external-main.zip",
+      "bytes": 871,
+      "sha256": "2954b1456d64b5615aacc3a67b674be5a8bdd2b670539826542422b88f4da444"
+    },
+    {
+      "file": "doctype.zip",
+      "bytes": 878,
+      "sha256": "2e60b946092d918e7169f9095b9b97cbd18524526bed3324928d7b35462ab6fb"
+    },
+    {
+      "file": "embedded-end.zip",
+      "bytes": 183,
+      "sha256": "b31c1f392e0d231a35756af060dc1283541f189c6bb84d25911dba88cefdef75"
+    },
+    {
+      "file": "oversized-docx-metadata.zip",
+      "bytes": 1878,
+      "sha256": "1ac1c65b9f5ba97463a56bad98678b126eec86d864811d19892f2ab121f90529"
+    },
+    {
+      "file": "stored-rar4.rar",
+      "bytes": 111,
+      "sha256": "b72b1d2d3222df721e4bd7db56a7d61fcaaa738653a738ffffb099ba1f5f7871",
+      "independent_bsdtar_extract_exit_code": 0,
+      "payload_sha256": "76af91d8c2a68ff3d8c6432f7d471b5aa14bbbb3388839a539ef9c732ea35081"
+    },
+    {
+      "file": "stored-rar5.rar",
+      "bytes": 96,
+      "sha256": "6146b5e06ddb33e2ad736920ace5019d70be8e0627a9ca5c32cd55de2b5589f9",
+      "independent_bsdtar_extract_exit_code": 0,
+      "payload_sha256": "76af91d8c2a68ff3d8c6432f7d471b5aa14bbbb3388839a539ef9c732ea35081"
+    }
+  ]
+}

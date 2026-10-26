@@ -14,6 +14,14 @@ describe('visible operation state', () => {
     expect(html).toContain('Idle sleep prevented during the operation');
     expect(html).toContain('20.0%');
   });
+  it('estimates after a poll arrives between the one-second display clock ticks', () => {
+    const html = render(base, { ...monitor, now: 3500, lastResponseAt: 4000 });
+    expect(html).toContain('≈ 00:16');
+  });
+  it('does not present an uninstrumented recovery source counter as zero bytes read', () => {
+    const html = render({ ...base, mode: 'recover', stage: 'recovering', progress: { ...base.progress, bytes_read: 0 } });
+    expect(html).toContain('Processed'); expect(html).not.toContain('Source bytes read');
+  });
   it('keeps unbounded metadata scanning indeterminate without fabricated percentage or ETA', () => {
     const html = render({ ...base, mode: 'quick', stage: 'metadata', progressDeterminate: false });
     expect(html).toContain('Metadata read'); expect(html).not.toContain('20.0%'); expect(html).not.toContain('≈');
@@ -48,5 +56,20 @@ describe('visible operation state', () => {
     expect(en).toContain('Metadata scan finished'); expect(en).toContain('does not scan the entire contents'); expect(en).not.toContain('All operation stages finished');
     const ru = render(quick, monitor, false, 'ru');
     expect(ru).toContain('Менее 1 с'); expect(ru).toContain('Поиск по метаданным завершён'); expect(ru).toContain('Полное содержимое носителя в этом режиме не сканируется');
+  });
+  it('distinguishes recent IPC delivery from an unresponsive worker and suppresses its ETA', () => {
+    const html = render({ ...base, workerHeartbeatAgeSeconds: 45 });
+    expect(html).toContain('Status received'); expect(html).toContain('Worker activity'); expect(html).toContain('45 s ago');
+    expect(html).toContain('a responsive interface does not imply scan progress'); expect(html).not.toContain('≈');
+  });
+  it('shows actual sector reads with repeat-read scope and no invented sector size', () => {
+    const html = render({ ...base, progress: { ...base.progress, bytes_read: 4096, sector_size: 512 }, sourceSize: 1_000_000_000 });
+    expect(html).toContain('Sectors read: 8'); expect(html).toContain('Sector size: 512 B'); expect(html).toContain('Source size: 1 GB');
+    expect(render({ ...base, progress: { ...base.progress, bytes_read: 4096 } })).not.toContain('Sectors read');
+  });
+  it('retains final duration and explains terminal result transfer without offering a meaningless stop', () => {
+    const html = render({ ...base, status: 'cancelled', resultsState: 'partial', elapsedSeconds: 0.3, sleepInhibited: false }, { ...monitor, elapsed: 20 });
+    expect(html).toContain('Less than 1 s'); expect(html).toContain('final list is still loading');
+    expect(html).not.toContain('Sleep protection unavailable'); expect(html).not.toContain('>Stop<');
   });
 });

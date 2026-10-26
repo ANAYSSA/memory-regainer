@@ -14,6 +14,10 @@ impl<'a> Reporter<'a> {
             last: Instant::now(),
         }
     }
+    pub(crate) fn geometry(&mut self, sector: Option<u32>, size: u64) {
+        self.state.sector_size = sector;
+        self.state.source_size = size;
+    }
     pub(crate) fn stage(
         &mut self,
         stage: &str,

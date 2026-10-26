@@ -1,6 +1,9 @@
 //! Read-only recovery primitives. No function in this crate opens a source for writing.
 //! A recognisable record is evidence, never a guarantee of recoverable content.
+mod archives;
 mod carve;
+mod formats;
+pub use formats::{matches_filter, supported_formats, FormatSpec};
 mod exfat;
 mod fat;
 mod partition;
@@ -12,6 +15,7 @@ pub use reader::SourceReader;
 use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
+    collections::{BTreeMap, HashSet},
     io::Write,
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
@@ -51,7 +55,7 @@ pub struct Extent {
     pub offset: u64,
     pub length: u64,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Entry {
     pub id: String,
     pub name: String,
@@ -62,6 +66,30 @@ pub struct Entry {
     pub method: String,
     pub notes: Vec<String>,
     pub extents: Vec<Extent>,
+    #[serde(default)]
+    pub relative_path: Option<String>,
+    #[serde(default)]
+    pub partition: Option<String>,
+    #[serde(default = "unknown_status")]
+    pub deletion_status: String,
+}
+fn unknown_status() -> String {
+    "unknown".into()
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ScanDiagnostics {
+    pub candidates: u64,
+    pub accepted: u64,
+    pub rejected: u64,
+    pub reasons: BTreeMap<String, u64>,
+}
+#[derive(Clone, Debug)]
+pub enum ScanEvent {
+    Entry(Entry),
+    Partition(Partition),
+    Warning(String),
+    MethodNote(String),
+    Diagnostics(ScanDiagnostics),
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Progress {
@@ -76,6 +104,10 @@ pub struct Progress {
     pub bytes_read: u64,
     #[serde(default)]
     pub current_offset: Option<u64>,
+    #[serde(default)]
+    pub sector_size: Option<u32>,
+    #[serde(default)]
+    pub source_size: u64,
 }
 fn default_stage() -> String {
     "opening-source".into()
@@ -93,6 +125,8 @@ impl Default for Progress {
             indeterminate: true,
             bytes_read: 0,
             current_offset: None,
+            sector_size: None,
+            source_size: 0,
         }
     }
 }
@@ -112,6 +146,8 @@ pub struct ScanResult {
     #[serde(default)]
     pub method_notes: Vec<String>,
     pub bytes_scanned: u64,
+    #[serde(default)]
+    pub diagnostics: ScanDiagnostics,
 }
 
 type ReadObserver<'a> = Box<dyn FnMut(u64, Option<u64>) -> Result<()> + 'a>;
@@ -186,8 +222,22 @@ pub fn scan_with_size(
     options: &ScanOptions,
     size_hint: Option<u64>,
     cancel: &AtomicBool,
-    mut on_progress: impl FnMut(Progress),
+    on_progress: impl FnMut(Progress),
 ) -> Result<ScanResult> {
+    scan_with_events(path, options, size_hint, cancel, on_progress, |_| {})
+}
+
+/// Emits immutable, filtered results as soon as each is validated. Callers may
+/// retain these events if a later read fails or the user cancels the scan.
+pub fn scan_with_events(
+    path: &Path,
+    options: &ScanOptions,
+    size_hint: Option<u64>,
+    cancel: &AtomicBool,
+    mut on_progress: impl FnMut(Progress),
+    on_event: impl FnMut(ScanEvent),
+) -> Result<ScanResult> {
+    let events = RefCell::new(on_event);
     check_cancel(cancel)?;
     if !["quick", "deep", "advanced"].contains(&options.mode.as_str()) {
         return Err(Error::Invalid("Unknown scan mode".into()));
@@ -196,6 +246,9 @@ pub fn scan_with_size(
     reporter.borrow_mut().stage("opening-source", true, 0, 0, 0);
     check_cancel(cancel)?;
     let mut source = Source::open_with_size(path, size_hint)?;
+    reporter
+        .borrow_mut()
+        .geometry(source.reader.measured_sector_size(), source.len);
     source.observer = Some(Box::new(|bytes, offset| {
         check_cancel(cancel)?;
         reporter.borrow_mut().io(bytes, offset);
@@ -236,7 +289,45 @@ pub fn scan_with_size(
     } else {
         partition::discover(&mut source, &mut warnings, cancel)?
     };
-    let mut entries = Vec::new();
+    for part in &partitions {
+        (events.borrow_mut())(ScanEvent::Partition(part.clone()));
+    }
+    for warning in &warnings {
+        (events.borrow_mut())(ScanEvent::Warning(warning.clone()));
+    }
+    let entries = RefCell::new(Vec::<Entry>::new());
+    let seen_ids = RefCell::new(HashSet::new());
+    let seen_ranges = RefCell::new(HashSet::new());
+    let mut publish = |entry: &Entry| {
+        if !matches_filter(&entry.kind, &options.types) {
+            return;
+        }
+        if !seen_ids.borrow_mut().insert(entry.id.clone()) {
+            return;
+        }
+        if entry.method == "signature-carving"
+            && seen_ranges.borrow().contains(&(entry.offset, entry.size))
+        {
+            return;
+        }
+        if entry.extents.len() == 1
+            && entry.extents[0].offset == entry.offset
+            && entry.extents[0].length == entry.size
+        {
+            seen_ranges.borrow_mut().insert((entry.offset, entry.size));
+        }
+        let mut entry = entry.clone();
+        if entry.partition.is_none() {
+            entry.partition = partitions
+                .iter()
+                .find(|p| {
+                    entry.offset >= p.offset && entry.offset < p.offset.saturating_add(p.size)
+                })
+                .map(|p| p.name.clone());
+        }
+        entries.borrow_mut().push(entry.clone());
+        (events.borrow_mut())(ScanEvent::Entry(entry));
+    };
     let mut scanned = 0u64;
     let total = end - start;
     reporter.borrow_mut().stage("metadata", true, 0, 0, 0);
@@ -247,74 +338,77 @@ pub fn scan_with_size(
             continue;
         }
         if part.filesystem.starts_with("FAT") || part.filesystem == "exFAT" {
-            let mut report = |n, count| {
+            let mut report = |n, _count| {
                 scanned = scanned.saturating_add(n);
                 reporter
                     .borrow_mut()
-                    .position(scanned, entries.len() + count);
+                    .position(scanned, entries.borrow().len());
             };
-            let result = if part.filesystem == "exFAT" {
-                method_notes.push(exfat::METHOD_NOTE.to_string());
-                exfat::scan_deleted(&mut source, part, cancel, &mut report)
+            let note = if part.filesystem == "exFAT" {
+                exfat::METHOD_NOTE
             } else {
-                method_notes.push(fat::METHOD_NOTE.to_string());
-                fat::scan_deleted(&mut source, part, cancel, &mut report)
+                fat::METHOD_NOTE
+            };
+            if !method_notes.iter().any(|n| n == note) {
+                method_notes.push(note.to_string());
+                (events.borrow_mut())(ScanEvent::MethodNote(note.into()));
+            }
+            let result = if part.filesystem == "exFAT" {
+                exfat::scan_deleted(&mut source, part, cancel, &mut report, &mut publish)
+            } else {
+                fat::scan_deleted(&mut source, part, cancel, &mut report, &mut publish)
             };
             match result {
-                Ok((mut found, notices)) => {
-                    entries.append(&mut found);
-                    warnings.extend(notices);
+                Ok((_found, notices)) => {
+                    for notice in notices {
+                        (events.borrow_mut())(ScanEvent::Warning(notice.clone()));
+                        warnings.push(notice);
+                    }
                 }
                 Err(Error::Cancelled) => return Err(Error::Cancelled),
                 Err(Error::Io(e)) => return Err(Error::Io(e)),
-                Err(e) => warnings.push(format!("{}: {e}", part.name)),
+                Err(e) => {
+                    let message = format!("{}: {e}", part.name);
+                    (events.borrow_mut())(ScanEvent::Warning(message.clone()));
+                    warnings.push(message);
+                }
             }
         } else if options.mode == "quick" {
-            warnings.push(format!("{}: {} metadata undelete is unavailable. Deep Scan can search supported signatures.", part.name, part.filesystem));
+            let message = format!(
+                "{}: {} metadata recovery is unavailable. Scan can search supported signatures.",
+                part.name, part.filesystem
+            );
+            (events.borrow_mut())(ScanEvent::Warning(message.clone()));
+            warnings.push(message);
         }
     }
-    entries.retain(|e| e.offset >= start && e.offset.checked_add(e.size).is_some_and(|n| n <= end));
+    let mut diagnostics = ScanDiagnostics::default();
     if options.mode != "quick" {
-        if options.types.is_empty()
-            || options
-                .types
-                .iter()
-                .any(|t| t.eq_ignore_ascii_case("mp4") || t.eq_ignore_ascii_case("mov"))
-        {
+        if matches_filter("mp4", &options.types) || matches_filter("mov", &options.types) {
             method_notes.push(video::METHOD_NOTE.into());
+            (events.borrow_mut())(ScanEvent::MethodNote(video::METHOD_NOTE.into()));
         }
-        let base_count = entries.len();
         reporter
             .borrow_mut()
-            .stage("carving", false, total, 0, base_count);
+            .stage("carving", false, total, 0, entries.borrow().len());
         check_cancel(cancel)?;
-        let mut carved = carve::scan(
+        carve::scan(
             &mut source,
             start,
             end,
             &options.types,
             cancel,
-            |done, found| {
-                reporter.borrow_mut().position(done, base_count + found);
+            |done, _found| reporter.borrow_mut().position(done, entries.borrow().len()),
+            &mut publish,
+            &mut |value: ScanDiagnostics| {
+                diagnostics = value.clone();
+                (events.borrow_mut())(ScanEvent::Diagnostics(value));
             },
         )?;
-        carved.retain(|e| {
-            !entries
-                .iter()
-                .any(|old| old.offset == e.offset && old.size == e.size)
-        });
-        entries.extend(carved);
         scanned = total;
     }
-    if !options.types.is_empty() {
-        entries.retain(|e| {
-            options
-                .types
-                .iter()
-                .any(|t| t.eq_ignore_ascii_case(&e.kind))
-        });
-    }
     check_cancel(cancel)?;
+    let entries = entries.into_inner();
     reporter.borrow_mut().stage(
         "finished",
         false,
@@ -333,6 +427,7 @@ pub fn scan_with_size(
         warnings,
         method_notes,
         bytes_scanned: scanned.min(total),
+        diagnostics,
     })
 }
 

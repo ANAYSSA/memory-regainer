@@ -66,3 +66,26 @@ jobs:
         run: command -v cargo-audit || cargo install cargo-audit --version 0.22.2 --locked
       - name: Check RustSec advisories
         run: cargo audit
+
+  windows-raw-volume:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build frontend embedded by desktop tests
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npm run build
+      - name: Native Windows recovery and backend tests
+        run: cargo test --workspace --locked
+      - name: Read-only physical disk and mounted FAT32 volume regression
+        shell: pwsh
+        run: ./scripts/windows_raw_device_test.ps1

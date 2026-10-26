@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "formats": [
+    {"id":"jpg","label":"JPEG image","aliases":["jpeg"],"family":"image","enabled":true,"validator":"jpeg","max_bytes":268435456,"signatures":[{"offset":0,"hex":"ffd8ff"}]},
+    {"id":"png","label":"PNG image","aliases":[],"family":"image","enabled":true,"validator":"png","max_bytes":268435456,"signatures":[{"offset":0,"hex":"89504e470d0a1a0a"}]},
+    {"id":"pdf","label":"PDF document","aliases":[],"family":"document","enabled":true,"validator":"pdf","max_bytes":268435456,"signatures":[{"offset":0,"hex":"255044462d"}]},
+    {"id":"gif","label":"GIF image","aliases":[],"family":"image","enabled":true,"validator":"gif","max_bytes":268435456,"signatures":[{"offset":0,"hex":"474946383761"},{"offset":0,"hex":"474946383961"}]},
+    {"id":"zip","label":"ZIP archive (includes DOCX)","aliases":[],"family":"zip","enabled":true,"validator":"zip-eocd","max_bytes":17179869184,"signatures":[{"offset":0,"hex":"504b0506"}]},
+    {"id":"docx","label":"Word DOCX package","aliases":[],"family":"zip","enabled":true,"validator":"zip-eocd","max_bytes":17179869184,"signatures":[{"offset":0,"hex":"504b0506"}]},
+    {"id":"rar","label":"RAR 4 / RAR 5 archive","aliases":[],"family":"archive","enabled":true,"validator":"rar","max_bytes":17179869184,"signatures":[{"offset":0,"hex":"526172211a0700"},{"offset":0,"hex":"526172211a070100"}]},
+    {"id":"bmp","label":"BMP image","aliases":[],"family":"image","enabled":true,"validator":"bmp","max_bytes":268435456,"signatures":[{"offset":0,"hex":"424d"}]},
+    {"id":"wav","label":"WAVE audio","aliases":[],"family":"audio","enabled":true,"validator":"wav","max_bytes":1073741824,"signatures":[{"offset":0,"hex":"52494646"}]},
+    {"id":"mp4","label":"MP4 video","aliases":[],"family":"video","enabled":true,"validator":"video","max_bytes":70368744177664,"signatures":[{"offset":4,"hex":"66747970"}]},
+    {"id":"mov","label":"QuickTime MOV video","aliases":[],"family":"video","enabled":true,"validator":"video","max_bytes":70368744177664,"signatures":[{"offset":4,"hex":"66747970"}]}
+  ]
+}

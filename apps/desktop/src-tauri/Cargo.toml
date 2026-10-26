@@ -1,6 +1,6 @@
 [package]
 name = "memory-regainer-desktop"
-version = "0.1.3"
+version = "0.2.0"
 description = "Offline read-only file recovery"
 edition = "2021"
 license = "GPL-3.0-or-later"

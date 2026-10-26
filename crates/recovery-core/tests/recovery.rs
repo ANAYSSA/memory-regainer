@@ -166,7 +166,7 @@ fn deleted_jpeg_fat32_hash_matches_and_source_is_unchanged() {
     assert_eq!(before, digest(&fs::read(&f.0).unwrap()));
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);
     assert_eq!(r.method_notes.len(), 1);
-    assert!(r.method_notes[0].contains("live directories"));
+    assert!(r.method_notes[0].contains("existing files with validated allocation chains"));
 }
 
 #[test]
@@ -477,6 +477,7 @@ fn output_io_failures_propagate() {
             offset: 0,
             length: JPG.len() as u64,
         }],
+        ..Default::default()
     };
     assert!(matches!(
         recover_entry(&f.0, &e, &mut Fails, &AtomicBool::new(false)),
@@ -714,6 +715,7 @@ fn large_recovery_reports_written_chunks_and_cancels_before_next_write() {
             offset: 0,
             length: payload.len() as u64,
         }],
+        ..Default::default()
     };
     let cancel = AtomicBool::new(false);
     let mut output = Vec::new();
@@ -779,6 +781,7 @@ fn registered_capacity_apis_keep_image_bounds_and_range_independent() {
             offset: 2000,
             length: 100,
         }],
+        ..Default::default()
     };
     assert_eq!(
         recovery_core::read_entry_with_size(&f.0, &entry, 100, Some(1)).unwrap(),

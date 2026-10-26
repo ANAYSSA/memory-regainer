@@ -4,7 +4,7 @@ use std::{
     sync::atomic::AtomicBool,
 };
 
-pub(crate) const METHOD_NOTE: &str = "FAT undelete examines deleted file records in live directories and assumes contiguous, currently free clusters. Deleted directories and orphan metadata are not searched; original allocation chains are unavailable after normal deletion. Verify recovered contents.";
+pub(crate) const METHOD_NOTE: &str = "FAT metadata scanning includes existing files with validated allocation chains and deleted records with currently free contiguous clusters. Deleted directory names and ancestry are tentative; only the confirmed first cluster is searched when its allocation chain is cleared. Orphan metadata and fragmented deleted files are not reconstructed. Content bytes are not decoded or proven unchanged.";
 
 struct Fat {
     base: u64,
@@ -238,22 +238,169 @@ fn lfn_name(pending: &[[u8; 32]], short: &[u8]) -> Option<String> {
     Some(name)
 }
 
+fn record_cluster(fat: &Fat, record: &[u8]) -> u32 {
+    if fat.bits == 32 {
+        ((u32::from(le16(record, 20)) << 16) | u32::from(le16(record, 26))) & 0x0fff_ffff
+    } else {
+        u32::from(le16(record, 26))
+    }
+}
+
+fn safe_name(name: &str) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name
+            .chars()
+            .any(|c| c.is_control() || "/\\:*?\"<>|".contains(c))
+}
+
+fn live_extents(
+    fat: &Fat,
+    source: &mut Source,
+    start: u32,
+    size: u64,
+    cancel: &AtomicBool,
+) -> Result<Vec<Extent>> {
+    let count = size.div_ceil(fat.cluster_bytes);
+    if count > u64::from(fat.clusters) {
+        return Err(Error::Invalid("File length exceeds cluster heap".into()));
+    }
+    let mut extents: Vec<Extent> = Vec::new();
+    let mut cluster = start;
+    let mut anchor = start;
+    let mut power = 1u64;
+    let mut distance = 0u64;
+    let mut remaining = size;
+    for step in 0..count {
+        check_cancel(cancel)?;
+        let offset = fat.cluster_offset(cluster)?;
+        let length = remaining.min(fat.cluster_bytes);
+        if let Some(previous) = extents.last_mut().filter(|e| e.offset + e.length == offset) {
+            previous.length += length;
+        } else {
+            // Bound memory even for adversarial one-cluster fragments.
+            if extents.len() >= 1_000_000 {
+                return Err(Error::Invalid(
+                    "File exceeds the one-million-extent safety limit".into(),
+                ));
+            }
+            extents.push(Extent { offset, length });
+        }
+        remaining -= length;
+        let next = fat.next(source, cluster)?;
+        if step + 1 == count {
+            if !fat.is_end(next) {
+                return Err(Error::Invalid(
+                    "File FAT chain exceeds its declared length or contains a loop".into(),
+                ));
+            }
+        } else {
+            fat.cluster_offset(next)?;
+            distance += 1;
+            if next == anchor {
+                return Err(Error::Invalid("File FAT chain contains a loop".into()));
+            }
+            if distance == power {
+                anchor = next;
+                power *= 2;
+                distance = 0;
+            }
+            cluster = next;
+        }
+    }
+    Ok(extents)
+}
+
+fn deleted_directory(fat: &Fat, source: &mut Source, first: u32, parent: u32) -> Result<()> {
+    if fat.next(source, first)? != 0 {
+        return Err(Error::Invalid(
+            "first directory cluster is currently allocated".into(),
+        ));
+    }
+    let records = source.bytes(fat.cluster_offset(first)?, fat.cluster_bytes as usize)?;
+    let dot = &records[..32];
+    let dotdot = &records[32..64];
+    let parent_cluster = record_cluster(fat, dotdot);
+    if &dot[..11] != b".          "
+        || &dotdot[..11] != b"..         "
+        || dot[11] != 0x10
+        || dotdot[11] != 0x10
+        || le32(dot, 28) != 0
+        || le32(dotdot, 28) != 0
+        || record_cluster(fat, dot) != first
+        || !(parent_cluster == parent || (parent == fat.root_cluster && parent_cluster == 0))
+    {
+        return Err(Error::Invalid(
+            "deleted directory lacks consistent . and .. records".into(),
+        ));
+    }
+    for record in records[64..].as_chunks::<32>().0 {
+        if record[0] == 0 {
+            break;
+        }
+        if record[11] == 0x0f {
+            if record[12] != 0 || le16(record, 26) != 0 {
+                return Err(Error::Invalid(
+                    "deleted directory contains implausible long-name records".into(),
+                ));
+            }
+        } else if record[11] & 0xc0 != 0 || !safe_name(&short_name(record)) {
+            return Err(Error::Invalid(
+                "deleted directory contains implausible directory records".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+struct Directory {
+    first: u32,
+    path: String,
+    deleted: bool,
+    parent: u32,
+}
+
 pub(crate) fn scan_deleted(
     source: &mut Source,
     part: &Partition,
     cancel: &AtomicBool,
     progress: &mut impl FnMut(u64, usize),
+    on_entry: &mut impl FnMut(&Entry),
 ) -> Result<(Vec<Entry>, Vec<String>)> {
     let fat = Fat::parse(source, part)?;
     let mut found = Vec::new();
     let mut notices = Vec::new();
-    let mut queue = VecDeque::from([(fat.root_cluster, String::from("/"))]);
+    let mut queue = VecDeque::from([Directory {
+        first: fat.root_cluster,
+        path: String::new(),
+        deleted: false,
+        parent: 0,
+    }]);
     let mut visited_dirs = HashSet::new();
     let mut rejected = 0usize;
-    while let Some((first, directory)) = queue.pop_front() {
+    while let Some(Directory {
+        first,
+        path,
+        deleted: inherited_deleted,
+        parent,
+    }) = queue.pop_front()
+    {
         check_cancel(cancel)?;
+        let directory = format!("/{path}");
         if !visited_dirs.insert(first) {
+            notices.push(format!("Directory {directory} skipped: its first cluster was already visited (alias or cycle)."));
             continue;
+        }
+        if inherited_deleted {
+            match deleted_directory(&fat, source, first, parent) {
+                Ok(()) => notices.push(format!("Deleted directory {directory}: allocation chain is cleared; only its confirmed first cluster is searched. Its path and surviving child records are tentative.")),
+                Err(Error::Invalid(reason)) => {
+                    notices.push(format!("Deleted directory {directory} skipped: {reason}."));
+                    continue;
+                }
+                Err(error) => return Err(error),
+            }
         }
         let mut chain = HashSet::new();
         let mut cluster = first;
@@ -278,6 +425,7 @@ pub(crate) fn scan_deleted(
                 let len = (length - pos).min(64 * 1024) as usize;
                 let block = source.bytes(offset + pos, len)?;
                 for (n, r) in block.as_chunks::<32>().0.iter().enumerate() {
+                    check_cancel(cancel)?;
                     if r[0] == 0 {
                         finished = true;
                         break;
@@ -294,93 +442,134 @@ pub(crate) fn scan_deleted(
                     if r[11] & 0x08 != 0 || r[0] == b'.' {
                         continue;
                     }
-                    let deleted = r[0] == 0xe5;
+                    let record_deleted = r[0] == 0xe5;
+                    let deleted = record_deleted || inherited_deleted;
                     let name = long.clone().unwrap_or_else(|| short_name(r));
-                    let start = if fat.bits == 32 {
-                        ((u32::from(le16(r, 20)) << 16) | u32::from(le16(r, 26))) & 0x0fff_ffff
-                    } else {
-                        u32::from(le16(r, 26))
-                    };
-                    if r[11] & 0x10 != 0 {
-                        if !deleted && start >= 2 && start < fat.clusters + 2 {
-                            queue.push_back((start, format!("{directory}{name}/")));
-                        }
+                    if r[11] & 0xc0 != 0 || !safe_name(&name) {
+                        rejected += 1;
                         continue;
                     }
-                    if !deleted {
+                    let start = record_cluster(&fat, r);
+                    if r[11] & 0x10 != 0 {
+                        if start >= 2 && start < fat.clusters + 2 && le32(r, 28) == 0 {
+                            let next = Directory {
+                                first: start,
+                                path: format!("{path}{name}/"),
+                                deleted,
+                                parent: first,
+                            };
+                            // Prefer authoritative live ancestry before tentative deleted aliases.
+                            if deleted {
+                                queue.push_back(next);
+                            } else {
+                                queue.push_front(next);
+                            }
+                        } else {
+                            notices.push(format!("Directory {directory}{name} skipped: invalid first cluster or directory size."));
+                        }
                         continue;
                     }
                     let size = u64::from(le32(r, 28));
                     let record_offset = offset + pos + (n * 32) as u64;
-                    let mut notes = vec![format!("Deleted FAT{} record in {directory}", fat.bits)];
-                    if long.is_some() {
-                        notes.push("Deleted long-name records have lost sequence numbers; adjacent name reconstruction is tentative.".into());
-                    } else {
-                        notes.push("The first short-name character was erased; '_' replaces it. Non-ASCII short names may be uncertain.".into());
+                    let mut notes = vec![format!(
+                        "{} FAT{} record in {directory}",
+                        if deleted { "Deleted" } else { "Existing" },
+                        fat.bits
+                    )];
+                    if record_deleted {
+                        if long.is_some() {
+                            notes.push("Deleted long-name records have lost sequence numbers; adjacent name reconstruction is tentative.".into());
+                        } else {
+                            notes.push("The first short-name character was erased; '_' replaces it. Non-ASCII short names may be uncertain.".into());
+                        }
                     }
-                    let file_offset;
-                    let extents;
-                    if size == 0 {
-                        file_offset = record_offset;
-                        extents = vec![];
-                        notes.push(
-                            "Deleted zero-length directory record; no content bytes exist.".into(),
-                        );
-                    } else {
+                    if inherited_deleted {
+                        notes.push("This record survives inside a deleted directory; deletion status and original ancestry are inferred and tentative.".into());
+                    }
+                    let uncertain_short_name =
+                        long.is_none() && r[..11].iter().any(|b| *b >= 0x80 && *b != 0xe5);
+                    if uncertain_short_name {
+                        notes.push("The OEM code page for this short name is unknown; non-ASCII filename characters and the resulting path may be uncertain.".into());
+                    }
+                    let allocation = if size == 0 {
+                        Ok(Vec::new())
+                    } else if deleted {
                         let needed = size.div_ceil(fat.cluster_bytes);
                         if start < 2 || u64::from(start) + needed > u64::from(fat.clusters) + 2 {
                             rejected += 1;
                             continue;
                         }
-                        let mut free = true;
-                        let mut invalid_metadata = false;
+                        let mut result = Ok(vec![Extent {
+                            offset: fat.cluster_offset(start)?,
+                            length: size,
+                        }]);
                         for step in 0..needed {
                             check_cancel(cancel)?;
                             match fat.next(source, start + step as u32) {
                                 Ok(0) => {}
                                 Ok(_) => {
-                                    free = false;
-                                    break;
-                                }
-                                Err(Error::Invalid(reason)) => {
-                                    notices.push(format!(
-                                        "Partial FAT scan: deleted record {directory}{name} at byte {record_offset} was skipped: {reason}. Other independent records were retained."
+                                    result = Err(Error::Invalid(
+                                        "content clusters are currently allocated".into(),
                                     ));
-                                    invalid_metadata = true;
                                     break;
                                 }
-                                Err(error) => return Err(error),
+                                Err(error) => {
+                                    result = Err(error);
+                                    break;
+                                }
                             }
                         }
-                        if invalid_metadata {
+                        result
+                    } else {
+                        live_extents(&fat, source, start, size, cancel)
+                    };
+                    let extents = match allocation {
+                        Ok(extents) => extents,
+                        Err(Error::Invalid(reason)) => {
+                            notices.push(format!("Partial FAT scan: {} record {directory}{name} at byte {record_offset} was skipped: {reason}. Other independent records were retained.", if deleted { "deleted" } else { "existing" }));
                             continue;
                         }
-                        if !free {
-                            rejected += 1;
-                            continue;
-                        }
-                        file_offset = fat.cluster_offset(start)?;
-                        extents = vec![Extent {
-                            offset: file_offset,
-                            length: size,
-                        }];
+                        Err(error) => return Err(error),
+                    };
+                    if size == 0 {
+                        notes.push("Zero-length directory record; no content bytes exist.".into());
+                    } else if deleted {
                         notes.push("All assumed clusters are currently free. Deletion erased the chain: contiguous allocation is an assumption; fragmented or overwritten content may be wrong.".into());
+                    } else {
+                        notes.push("The complete current FAT chain matches the declared file length. Content is not decoded; a changing mounted filesystem can invalidate this snapshot.".into());
                     }
                     let kind = name
                         .rsplit_once('.')
                         .map_or("unknown", |(_, ext)| ext)
                         .to_ascii_lowercase();
-                    found.push(Entry {
+                    let entry = Entry {
                         id: format!("fat-{:x}-{record_offset:x}", fat.base),
+                        relative_path: Some(format!("{path}{name}")),
+                        partition: Some(part.name.clone()),
+                        deletion_status: if deleted { "deleted" } else { "existing" }.into(),
                         name,
                         kind,
                         size,
-                        offset: file_offset,
-                        confidence: if size == 0 { "high" } else { "low" }.into(),
-                        method: "fat-undelete".into(),
+                        offset: extents.first().map_or(record_offset, |e| e.offset),
+                        confidence: if deleted {
+                            "low"
+                        } else if uncertain_short_name {
+                            "medium"
+                        } else {
+                            "high"
+                        }
+                        .into(),
+                        method: if deleted {
+                            "fat-undelete"
+                        } else {
+                            "fat-metadata"
+                        }
+                        .into(),
                         notes,
                         extents,
-                    });
+                    };
+                    on_entry(&entry);
+                    found.push(entry);
                 }
                 progress(len as u64, found.len());
                 pos += len as u64;
@@ -388,15 +577,13 @@ pub(crate) fn scan_deleted(
                     break;
                 }
             }
-            if first == 0 || finished {
+            if first == 0 || finished || inherited_deleted {
                 break;
             }
             let next = match fat.next(source, cluster) {
                 Ok(next) => next,
                 Err(Error::Invalid(reason)) => {
-                    notices.push(format!(
-                        "Partial FAT scan: directory {directory} stopped at cluster {cluster}: {reason}. Remaining directory records were skipped; previously found records were retained."
-                    ));
+                    notices.push(format!("Partial FAT scan: directory {directory} stopped at cluster {cluster}: {reason}. Remaining directory records were skipped; previously found records were retained."));
                     break;
                 }
                 Err(error) => return Err(error),
@@ -414,7 +601,7 @@ pub(crate) fn scan_deleted(
         }
     }
     if rejected > 0 {
-        notices.push(format!("{rejected} deleted FAT records were skipped because their ranges were invalid or clusters are currently allocated. Fragmented deleted FAT chains are not reconstructed."));
+        notices.push(format!("{rejected} FAT records were skipped because their ranges, names or allocation chains were invalid, or deleted content clusters are currently allocated. Fragmented deleted FAT chains are not reconstructed."));
     }
     Ok((found, notices))
 }

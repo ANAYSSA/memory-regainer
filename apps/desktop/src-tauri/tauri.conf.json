@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Memory Regainer",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "identifier": "io.github.anayssa.memory-regainer",
   "build": {
     "beforeDevCommand": "npm run dev",

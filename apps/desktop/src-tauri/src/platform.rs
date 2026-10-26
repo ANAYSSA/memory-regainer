@@ -82,33 +82,76 @@ pub fn sources() -> Result<Vec<Source>, String> {
     }
     #[cfg(target_os = "windows")]
     {
-        let out = powershell().args(["-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); Get-Disk | Select-Object Number,FriendlyName,Size,BusType,IsOffline | ConvertTo-Json -Compress"]).output().map_err(|e|e.to_string())?;
+        // Get-Partition establishes the volume-to-disk relationship; a drive
+        // letter is not itself a physical-device identity.
+        let script = r#"$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); $identity=[Security.Principal.WindowsIdentity]::GetCurrent(); $principal=[Security.Principal.WindowsPrincipal]::new($identity); $elevated=$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator); $disks=@(Get-Disk -ErrorAction Stop); $volumes=@(foreach($disk in $disks) { foreach($part in @(Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue)) { if ($part.DriveLetter -match '^[A-Za-z]$') { $volume=$part | Get-Volume -ErrorAction SilentlyContinue; if ($null -ne $volume) { [pscustomobject]@{ DriveLetter=[string]$part.DriveLetter; DiskNumber=$disk.Number; PartitionNumber=$part.PartitionNumber; Size=$part.Size; Label=$volume.FileSystemLabel; FileSystem=$volume.FileSystem; BusType=[string]$disk.BusType } } } } }); [pscustomobject]@{ Elevated=$elevated; Disks=@($disks | Select-Object Number,FriendlyName,Size,BusType,IsOffline); Volumes=$volumes } | ConvertTo-Json -Depth 5 -Compress"#;
+        let out = powershell()
+            .args(["-NoProfile", "-NonInteractive", "-Command", script])
+            .output()
+            .map_err(|e| e.to_string())?;
         if !out.status.success() {
             return Err(String::from_utf8_lossy(&out.stderr).into_owned());
         }
         let value: Value = serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())?;
-        let values = if value.is_array() {
-            value.as_array().cloned().unwrap_or_default()
-        } else {
-            vec![value]
+        let elevated = value["Elevated"].as_bool().unwrap_or(false);
+        let access = |path: &str| {
+            if !elevated {
+                return (false, "Windows administrator rights are required for raw disk/volume scanning. Open Memory Regainer as administrator and accept the Windows prompt.".to_owned());
+            }
+            match File::open(path) {
+                Ok(_) => (true, "Read-only access ready; administrator token verified.".into()),
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => (false, format!("Windows denied access: {e}. Security software or policy may restrict this source despite administrator rights.")),
+                Err(e) => (false, format!("Cannot open raw source: {e}. Reconnect the device and refresh the source list.")),
+            }
         };
-        Ok(values.iter().filter_map(|d| {
-            let n = d["Number"].as_u64()?;
-            let path = format!(r"\\.\PhysicalDrive{n}");
-            let access = File::open(&path);
-            let detail = match &access {
-                Ok(_) => "Read-only physical disk. Windows administrator permission granted.".into(),
-                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => format!("Windows denied access: {e}. Accept the administrator prompt when opening Memory Regainer. Security software or policy may also restrict this disk."),
-                Err(e) => format!("Cannot open physical disk: {e}. Reconnect the device and refresh the source list."),
+        let mut result = Vec::new();
+        for v in value["Volumes"].as_array().into_iter().flatten() {
+            let Some(letter) = v["DriveLetter"]
+                .as_str()
+                .filter(|s| s.len() == 1 && s.as_bytes()[0].is_ascii_alphabetic())
+            else {
+                continue;
             };
-            Some(Source {
+            let Some(disk) = v["DiskNumber"].as_u64() else {
+                continue;
+            };
+            let letter = letter.to_ascii_uppercase();
+            let path = format!(r"\\.\{letter}:");
+            let (accessible, status) = access(&path);
+            let label = v["Label"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("Mounted volume");
+            let filesystem = v["FileSystem"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("Unknown filesystem");
+            result.push(Source {
+                id: format!("volume:{letter}"), name: format!("{letter}: {label}"), path,
+                size: v["Size"].as_u64().unwrap_or(0), kind: "device".into(), accessible,
+                detail: format!("{filesystem} · volume {letter}: · physical disk {disk} · {} · {status} Mounted contents can change while other applications write.", v["BusType"].as_str().unwrap_or("Unknown connection")),
+            });
+        }
+        for d in value["Disks"].as_array().into_iter().flatten() {
+            let Some(n) = d["Number"].as_u64() else {
+                continue;
+            };
+            let path = format!(r"\\.\PhysicalDrive{n}");
+            let (accessible, status) = access(&path);
+            result.push(Source {
                 id: format!("device:{n}"),
-                name: d["FriendlyName"].as_str().unwrap_or("Physical drive").into(),
-                accessible: access.is_ok(), path,
+                name: format!(
+                    "{} (physical disk {n})",
+                    d["FriendlyName"].as_str().unwrap_or("Physical drive")
+                ),
+                accessible,
+                path,
                 size: d["Size"].as_u64().unwrap_or(0),
-                kind: "device".into(), detail,
-            })
-        }).collect())
+                kind: "device".into(),
+                detail: format!("Whole physical disk, including all partitions. {status}"),
+            });
+        }
+        Ok(result)
     }
     #[cfg(target_os = "linux")]
     {
@@ -209,22 +252,37 @@ fn physical_media(path: &Path) -> Result<BTreeSet<String>, String> {
     }
     Ok(ids)
 }
-#[cfg(target_os = "windows")]
-fn physical_media(path: &Path) -> Result<BTreeSet<String>, String> {
-    let s = path.to_str().ok_or("Invalid path")?;
-    let disk_script = if let Some(n) = s.strip_prefix(r"\\.\PhysicalDrive") {
+/// Produce a read-only mapping query, including raw mounted-volume paths.
+/// Kept platform-independent for parser/escaping regression tests.
+#[cfg(any(target_os = "windows", test))]
+fn windows_disk_script(s: &str) -> Result<String, String> {
+    if let Some(n) = s.strip_prefix(r"\\.\PhysicalDrive") {
         if n.is_empty() || !n.chars().all(|c| c.is_ascii_digit()) {
             return Err("Invalid physical drive".into());
         }
-        format!("$disks = @(Get-Disk -Number {n} -ErrorAction Stop);")
-    } else {
-        let p = s.strip_prefix(r"\\?\").unwrap_or(s);
-        if p.starts_with(r"\\") {
-            return Err("Network destinations cannot be mapped to physical media".into());
+        return Ok(format!(
+            "$disks = @(Get-Disk -Number {n} -ErrorAction Stop);"
+        ));
+    }
+    if let Some(volume) = s.strip_prefix(r"\\.\") {
+        let bytes = volume.as_bytes();
+        if bytes.len() != 2 || !bytes[0].is_ascii_alphabetic() || bytes[1] != b':' {
+            return Err("Unsupported raw volume path".into());
         }
-        let quoted = p.replace('\'', "''");
-        format!("$v = Get-Volume -FilePath '{quoted}' -ErrorAction Stop; $part = @(Get-Partition -Volume $v -ErrorAction Stop); $disks = @($part | Get-Disk -ErrorAction Stop);")
-    };
+        let letter = (bytes[0] as char).to_ascii_uppercase();
+        return Ok(format!("$part = @(Get-Partition -DriveLetter '{letter}' -ErrorAction Stop); $disks = @($part | Get-Disk -ErrorAction Stop);"));
+    }
+    let p = s.strip_prefix(r"\\?\").unwrap_or(s);
+    if p.starts_with(r"\\") || p.starts_with("UNC\\") {
+        return Err("Network destinations cannot be mapped to physical media".into());
+    }
+    let quoted = p.replace('\'', "''");
+    Ok(format!("$v = Get-Volume -FilePath '{quoted}' -ErrorAction Stop; $part = @(Get-Partition -Volume $v -ErrorAction Stop); $disks = @($part | Get-Disk -ErrorAction Stop);"))
+}
+#[cfg(target_os = "windows")]
+fn physical_media(path: &Path) -> Result<BTreeSet<String>, String> {
+    let s = path.to_str().ok_or("Invalid path")?;
+    let disk_script = windows_disk_script(s)?;
     let script = format!("$ErrorActionPreference='Stop'; {disk_script} if ($disks.Count -eq 0) {{ throw 'No physical mapping' }}; foreach ($disk in $disks) {{ if ($disk.BusType -notin @('USB','SATA','SAS','SCSI','NVMe','SD','MMC','ATA')) {{ throw 'Virtual, RAID or unknown media is not supported for safe destination mapping' }} }}; @($disks | Select-Object -ExpandProperty Number) | ConvertTo-Json -Compress");
     let out = powershell()
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
@@ -333,4 +391,34 @@ pub fn check_free_space(destination: &Path, required: u64) -> Result<(), String>
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod windows_mapping_tests {
+    use super::windows_disk_script;
+    #[test]
+    fn raw_drive_letter_maps_to_its_partition_and_physical_disk() {
+        let script = windows_disk_script(r"\\.\E:").unwrap();
+        assert!(script.contains("Get-Partition -DriveLetter 'E'"));
+        assert!(script.contains("$part | Get-Disk"));
+        assert!(!script.contains("Get-Volume -FilePath"));
+    }
+    #[test]
+    fn mappings_reject_raw_injection_network_and_escape_local_quotes() {
+        for bad in [
+            r"\\.\E:;Remove-Item",
+            r"\\.\PhysicalDrive1;exit",
+            r"\\server\share",
+            r"\\?\UNC\server\share",
+            r"\\.\E:\folder",
+        ] {
+            assert!(windows_disk_script(bad).is_err(), "{bad}");
+        }
+        assert!(windows_disk_script(r"\\.\PhysicalDrive12")
+            .unwrap()
+            .contains("-Number 12"));
+        assert!(windows_disk_script(r"\\?\C:\O'Brien\output")
+            .unwrap()
+            .contains("'C:\\O''Brien\\output'"));
+    }
 }

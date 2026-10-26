@@ -1943,7 +1943,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": "https://github.com/rust-lang/flate2-rs",
       "source_archive": "https://crates.io/api/v1/crates/flate2/1.1.10/download",
-      "purpose": "transitive Rust build/runtime dependency",
+      "purpose": "direct Rust dependency",
       "notices": [
         {
           "file": "LICENSE-APACHE",
@@ -4856,7 +4856,7 @@
       "license": "MIT",
       "origin": "https://github.com/tafia/quick-xml",
       "source_archive": "https://crates.io/api/v1/crates/quick-xml/0.41.0/download",
-      "purpose": "transitive Rust build/runtime dependency",
+      "purpose": "direct Rust dependency",
       "notices": [
         {
           "file": "LICENSE-MIT.md",
@@ -4871,7 +4871,7 @@
       "license": "MIT",
       "origin": "https://github.com/tafia/quick-xml",
       "source_archive": "https://crates.io/api/v1/crates/quick-xml/0.42.0/download",
-      "purpose": "transitive Rust build/runtime dependency",
+      "purpose": "direct Rust dependency",
       "notices": [
         {
           "file": "LICENSE-MIT.md",
@@ -10660,8 +10660,13 @@
       "origin": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz",
       "purpose": "frontend development/transitive dependency",
       "development_only": true,
-      "installed_on_inventory_host": false,
-      "notices": []
+      "installed_on_inventory_host": true,
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "2a8a5d6197bb97a018b8a190dd3ed853d750ca87c8e80c17aad41d6c6ff448e1"
+        }
+      ]
     },
     {
       "ecosystem": "npm",
