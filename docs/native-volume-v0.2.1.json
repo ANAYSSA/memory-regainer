@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
   "release": "0.2.1",
-  "source_commit": "2ae2dccd72e5617e0de7fd9cd38b6a4d5f7958fe",
-  "workflow_run": "https://github.com/ANAYSSA/memory-regainer/actions/runs/40304905869",
+  "source_commit": "14cf646b36e975a3b079f39ec350695ffc01ec12",
+  "workflow_run": "https://github.com/ANAYSSA/memory-regainer/actions/runs/40306119140",
   "workflow_conclusion": "success",
-  "windows_job": "https://github.com/ANAYSSA/memory-regainer/actions/runs/40304905869/job/121511504378",
+  "windows_job": "https://github.com/ANAYSSA/memory-regainer/actions/runs/40306119140/job/121515521307",
   "windows_job_conclusion": "success",
-  "completed_at": "2026-10-26T10:09:52Z",
-  "log_sha256": "2f9fa9d5548bcda98e561efd89af23900e927b178c216a272d4ac900d2606b9f",
+  "completed_at": "2026-10-26T10:18:58Z",
+  "log_sha256": "ec0f73aba794dae57b280e6b0caf5468644d16c2529730b47a94cf8cc0480bcb",
   "scope": "Two freshly created disposable VHDs only: a 32 MiB all-zero physical-device probe, plus a mounted FAT32 volume populated with 42 original clips, two photos and one unique marker. The filesystem was created on the scratch image, then detached and remounted read-only before scanning and recovery. Existing nested files are tested natively; deleted-directory recovery is covered separately by deterministic image tests. No user USB device was inspected.",
   "windows_rust_tests": {
-    "total_passed": 136,
+    "total_passed": 137,
     "total_failed": 0,
     "suites": [
       {
         "suite": "unittests src/main.rs",
-        "passed": 18,
+        "passed": 19,
         "failed": 0,
         "ignored": 0
       },
@@ -62,7 +62,8 @@
         "ignored": 0
       }
     ],
-    "platform_difference": "Two Unix-only sparse-file cases are not compiled on Windows."
+    "platform_difference": "Two Unix-only sparse-file cases are not compiled on Windows.",
+    "preexisting_temporary_path_regression": "passed"
   },
   "raw_physical_device": {
     "legacy_file_metadata_diagnostic": {
@@ -341,7 +342,7 @@
           },
           {
             "path": "MRPROBE.ID",
-            "sha256": "1edf04df6e13478984956e2aaa561d2905f63d36f76723c7000cf78778dfe198",
+            "sha256": "ae0bdbd87dc4b2d6dca71895844e361459fb1ab02830f6d73739d522905d54fd",
             "size": 67
           }
         ]
@@ -580,7 +581,7 @@
           },
           {
             "path": "MRPROBE.ID",
-            "sha256": "1edf04df6e13478984956e2aaa561d2905f63d36f76723c7000cf78778dfe198",
+            "sha256": "ae0bdbd87dc4b2d6dca71895844e361459fb1ab02830f6d73739d522905d54fd",
             "size": 67
           }
         ]

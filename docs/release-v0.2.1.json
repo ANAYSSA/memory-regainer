@@ -1,0 +1,74 @@
+{
+  "version": "0.2.1",
+  "tag_commit": "14cf646b36e975a3b079f39ec350695ffc01ec12",
+  "release_url": "https://github.com/ANAYSSA/memory-regainer/releases/tag/v0.2.1",
+  "native_release_build": "https://github.com/ANAYSSA/memory-regainer/actions/runs/40306133226",
+  "source_verification": "https://github.com/ANAYSSA/memory-regainer/actions/runs/40306119140",
+  "source_archive_matches_tagged_git_tree": true,
+  "source_archive_file_count": 1300,
+  "assets": [
+    {
+      "name": "Memory.Regainer_0.2.1_aarch64.dmg",
+      "size": 3274507,
+      "sha256": "028ed03cd78f89606645c85b9068b3674d927ed107143b08aeb9bd42a09e3405",
+      "checksum_verified": true,
+      "dmg_verified": true,
+      "bundle_version": "0.2.1",
+      "architecture": "arm64"
+    },
+    {
+      "name": "Memory.Regainer_0.2.1_x64-setup.exe",
+      "size": 2394914,
+      "sha256": "a383004bcc4b380c4496fb27e574cf81208aa0c4d99afb4bdaad46ca89d79ca7",
+      "checksum_verified": true
+    },
+    {
+      "name": "Memory.Regainer_0.2.1_x64.dmg",
+      "size": 3435299,
+      "sha256": "939d9951a2c7662631e542d06c97fe7331ac04c96ba799000bd5acb00841a8c5",
+      "checksum_verified": true,
+      "dmg_verified": true,
+      "bundle_version": "0.2.1",
+      "architecture": "x86_64"
+    },
+    {
+      "name": "memory-regainer-source.tar.gz",
+      "size": 839339,
+      "sha256": "685661e74ceb6e0db4421af26a32263ae8a4fcf68741bb654158740823fe215e",
+      "checksum_verified": true
+    }
+  ],
+  "user_physical_usb_directly_tested": false,
+  "native_gui_check": "Blocked by the locked Mac screen; no interactive GUI pass claimed.",
+  "rust_tests_macos": 139,
+  "rust_tests_windows": 137,
+  "frontend_tests": 61,
+  "windows_readonly_physical_and_mounted_volume_probes": true,
+  "windows_require_administrator_manifest_verified": true,
+  "release_workflow_conclusion": "success",
+  "local_cleanup": {
+    "removed_build_directories": [
+      {
+        "relative_path": "target",
+        "allocated_bytes_removed": 2602721280
+      },
+      {
+        "relative_path": "apps/desktop/node_modules",
+        "allocated_bytes_removed": 174878720
+      },
+      {
+        "relative_path": "apps/desktop/dist",
+        "allocated_bytes_removed": 401408
+      },
+      {
+        "relative_path": "apps/desktop/src-tauri/gen",
+        "allocated_bytes_removed": 311296
+      }
+    ],
+    "allocated_bytes_removed": 2778312704,
+    "original_user_supplied_files_preserved": true,
+    "downloaded_verification_copies_removed": true,
+    "task_owned_scratch_removed": true,
+    "scratch_allocated_bytes_removed": 12689408
+  }
+}
