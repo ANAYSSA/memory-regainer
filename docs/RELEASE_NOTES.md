@@ -1,31 +1,28 @@
-# Memory Regainer v0.1.3
+# Memory Regainer v0.2.0
 
-Deep and Advanced scans now find and recover **MP4 and MOV video files** from readable images or devices when their original content remains contiguous and the required container metadata is intact.
-
-## Recover a video
-
-1. Select your USB drive or a raw image of it.
-2. Use **Deep Scan**, now the initial mode. Leave all format boxes unchecked to search every supported type, or select **MP4** and **MOV**.
-3. Let the scan finish, select the results, and recover them to separate healthy storage.
-4. Open recovered videos in a local player and check their contents. A copy hash confirms the copied bytes, not the original video's completeness.
-
-Quick Scan still checks supported FAT/exFAT deleted records; it does not perform a full video-content search.
+Results now appear during scanning, and supported FAT/exFAT metadata recovery preserves useful folder paths, includes existing files and cautiously inspects some deleted directories. Content scanning also adds DOCX and RAR4/RAR5, broader ZIP support and visible candidate diagnostics.
 
 ## Changes
 
-- An independent MP4/MOV parser checks finite container boundaries, video tracks, local data references, sample counts/sizes, sample-to-chunk mappings and media chunk ranges. Movie metadata may be before or after media data. The parser supports 64-bit atom sizes and chunk offsets; the ZIP/WAV 1 GiB limit does not apply to video.
-- MP4/MOV format filters, video result icons and bilingual recovery guidance are included. Preview stays bounded; video files can be checked in a local player after recovery.
-- Sizes use **MB/GB** with decimal conversion. Subsecond operations show **Less than 1 s**, and general method information is separate from actual scan warnings.
-- Administrator access on Windows, progress/elapsed time and protection against automatic idle system sleep are retained.
+- One **Scan** action combines metadata and content searching. Collapsed **Expert options** holds optional format filters and byte ranges.
+- Accepted results arrive through a separate paged API. Browse location/type trees, filter names, paths and deletion status, sort results and recover selected files while scanning continues. Cancelling a scan retains accepted candidates; source identity is checked again before recovery.
+- FAT existing files follow current allocation chains, including fragmentation. Deleted-directory inspection is limited to a currently free first cluster with consistent directory records. Deleted file recovery still requires contiguous, currently free clusters.
+- exFAT existing streams and bounded contiguous deleted-directory candidates are included on supported clean single-FAT revision 1.00 volumes. Tentative deleted ancestry stays visible in the evidence. Arbitrarily fragmented deleted files remain unsupported.
+- Recovery preserves sanitized metadata hierarchy in a new output folder, handles name collisions and verifies copied bytes by SHA-256 read-back.
+- ZIP validation supports signed/unsigned data descriptors and ZIP64. DOCX classification checks bounded package relationships, content type and the document XML root. RAR4/RAR5 require valid header checksums, finite data bounds and an explicit end record. Split and encrypted archives are unsupported; ordinary archive payloads are not decoded by the app.
+- A versioned JSON registry supplies the eleven format categories, aliases and bounded signatures. Changes require rebuilding and can only select implemented validators. Precompiled first-byte dispatch reduces signature-search overhead. Actual read counters and bounded rejection reasons help explain scan activity.
+- Windows discovery and regression coverage now include mounted volumes alongside whole physical disks. Standard UAC, read-only source handles and destination checks remain in place.
 
-## Video scope and validation
+## Scope and evidence
 
-This release supports classic, self-contained MP4/MOV files. It does **not** reconstruct arbitrarily scattered fragments, rebuild missing movie metadata, repair overwritten video, decrypt tracks, or recover fragmented-MP4 (`moof`/`mvex`) layouts. Legacy MOV without `ftyp` and unbounded size-zero media-data atoms are unsupported. The app checks structure; it does not decode every recovered frame. These limits remain visible in scan and per-file notes.
+The default Scan examines supported FAT/exFAT metadata and then scans file contents. The legacy core Quick mode remains metadata-only; its byte counter is not a full-disk scan. Carved files have generated names and unknown original paths. Results labeled existing or deleted describe metadata evidence, not a guarantee that their contents are intact.
 
-Tests use small, real synthetic H.264/HEVC videos with AAC or PCM audio, including head/tail movie metadata and extended-size/64-bit-offset variants. They compare recovered bytes with known originals and exercise malformed tables, selected ranges and cancellation. Exact local decoding evidence, executed test counts and platform outcomes are recorded in [video validation](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.3/docs/VIDEO_RECOVERY_VALIDATION.md) and [release validation](https://github.com/ANAYSSA/memory-regainer/blob/main/docs/VALIDATION.md). This is not a real damaged-USB or recovery-rate benchmark.
+MP4/MOV recovery remains limited to classic, self-contained contiguous containers with intact metadata. This release does not add video fragment reconstruction, missing-metadata repair, NTFS/ext4/APFS undelete, pause/resume checkpoints or bad-sector imaging retries. Result transfer is paged, but backend and frontend catalogs remain in memory.
 
-All three tagged native builds passed. Each Mac target passed 83 Rust and 40 frontend tests; Windows passed 81 Rust and 40 frontend tests, excluding two Unix-only sparse-file cases. Windows raw-device and administrator-manifest checks passed. Downloaded installer/source SHA-256 values matched, both DMGs verified, and all 1,260 archived files matched the release tag. [Build results](https://github.com/ANAYSSA/memory-regainer/actions/runs/40213725993).
+Local validation passed **125 Rust tests and 54 frontend tests**, formatting, strict Clippy, build/lint and dependency checks. Nine archive fixtures recovered exactly; independent ZIP decompression/CRC checks and RAR extraction matched their originals. A generated FAT32 image passed the macOS filesystem checker, and a nested fixture with 42 videos and two photos recovered byte-for-byte. Native macOS GUI checks observed 44 results before content scanning completed, folder selection, concurrent recovery and retention after cancellation; two recovered photos matched source bytes. See [GUI evidence](https://github.com/ANAYSSA/memory-regainer/blob/v0.2.0/docs/gui-streaming-v0.2.0.json). These synthetic checks do not qualify a damaged physical USB device. Tagged native builds and publication evidence are recorded separately once completed.
 
-The release provides Windows x64 EXE, Apple Silicon DMG, Intel DMG, matching source, notices and SHA-256 checksums. Windows installers are unsigned; macOS builds are not Developer ID signed or notarized. Recovery works offline; installing missing WebView2 may need internet. Idle protection cannot override manual sleep, lid closure, shutdown or power loss.
+See [feature limits](https://github.com/ANAYSSA/memory-regainer/blob/v0.2.0/docs/FEATURES.md), [archive validation](https://github.com/ANAYSSA/memory-regainer/blob/v0.2.0/docs/ARCHIVE_RECOVERY_VALIDATION.md), [video validation](https://github.com/ANAYSSA/memory-regainer/blob/v0.2.0/docs/VIDEO_RECOVERY_VALIDATION.md) and [release validation](https://github.com/ANAYSSA/memory-regainer/blob/main/docs/VALIDATION.md).
 
-Memory Regainer is independent software under GPL-3.0-or-later. No Recoverit code or binaries are included. See the [feature matrix](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.3/docs/FEATURES.md) and the [bounded Recoverit research report](https://github.com/ANAYSSA/memory-regainer/blob/v0.1.3/docs/RECOVERIT_ARCHITECTURE_REVIEW.md).
+Release targets are Windows x64 EXE, Apple Silicon DMG and Intel DMG, with matching source, notices and SHA-256 checksums. Windows installers are unsigned; macOS builds are not Developer ID signed or notarized. Recovery works offline; installing missing WebView2 may need internet. Idle-sleep protection cannot override manual sleep, lid closure, shutdown or power loss.
+
+Memory Regainer is independent GPL-3.0-or-later software. No proprietary recovery code or binaries are included.

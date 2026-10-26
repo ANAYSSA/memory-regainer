@@ -13,9 +13,9 @@ function Get-ScratchDisk([string]$Image, [UInt64]$ExpectedSize, [bool]$RequireRe
     $resolved = @($actualImage | Get-Disk -ErrorAction Stop)
     if ($resolved.Count -ne 1) { throw 'Expected exactly one disk from the scratch image' }
     $disk = $resolved[0]
-    # STORAGE_BUS_TYPE 15 is FileBackedVirtual. Physical USB/SATA/NVMe disks
-    # categorically fail this guard before initialization or formatting.
-    if ([int]$disk.BusType -ne 15 -or $disk.IsBoot -or $disk.IsSystem -or [UInt64]$disk.Size -ne $ExpectedSize) { throw 'Target is not the expected non-system scratch VHD' }
+    # Get-Disk exposes BusType as its display string in PowerShell, even though
+    # the underlying STORAGE_BUS_TYPE value is 15. Physical disks fail closed.
+    if ([string]$disk.BusType -ne 'File Backed Virtual' -or $disk.IsBoot -or $disk.IsSystem -or [UInt64]$disk.Size -ne $ExpectedSize) { throw 'Target is not the expected non-system scratch VHD' }
     if ($RequireReadOnly -and -not $disk.IsReadOnly) { throw 'Probe source must be attached read-only' }
     return $disk
 }
@@ -90,7 +90,7 @@ try {
     foreach ($image in $images) {
         if (-not (Test-Path -LiteralPath $image)) { continue }
         $info = Get-DiskImage -ImagePath $image -ErrorAction SilentlyContinue
-        if ($info.Attached) { Dismount-DiskImage -ImagePath $image -ErrorAction SilentlyContinue }
+        if ($info.Attached) { Dismount-DiskImage -ImagePath $image -ErrorAction SilentlyContinue | Out-Null }
         if ((Get-DiskImage -ImagePath $image -ErrorAction SilentlyContinue).Attached) { $attached += $image }
     }
     if ($attached.Count -gt 0) { throw ('Scratch VHD still attached: ' + ($attached -join ', ')) }

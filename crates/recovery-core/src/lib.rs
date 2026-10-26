@@ -204,8 +204,8 @@ pub(crate) fn le64(b: &[u8], p: usize) -> u64 {
     u64::from_le_bytes(b[p..p + 8].try_into().expect("bounded field"))
 }
 
-/// Scan user-selected bytes. Quick mode examines deleted FAT records; deep/advanced
-/// additionally carve structural file signatures. Scan ranges are end-exclusive.
+/// Scan user-selected bytes. Quick mode examines supported FAT/exFAT metadata;
+/// deep/advanced additionally carve structural signatures. Ranges are end-exclusive.
 pub fn scan(
     path: &Path,
     options: &ScanOptions,
@@ -546,7 +546,5 @@ pub fn recover_entry_with_progress_and_size(
 
 /// Formats with implemented structural boundary handlers (not an extension count).
 pub fn supported_carving_types() -> &'static [&'static str] {
-    &[
-        "jpg", "png", "pdf", "gif", "zip", "bmp", "wav", "mp4", "mov",
-    ]
+    formats::supported_ids()
 }

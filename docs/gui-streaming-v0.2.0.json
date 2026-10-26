@@ -1,0 +1,105 @@
+{
+  "version": "0.2.0",
+  "dateUTC": "2026-10-26T08:11:19.151690+00:00",
+  "platform": "macOS arm64",
+  "build": "Native Tauri debug bundle",
+  "source": {
+    "kind": "synthetic FAT32 raw image",
+    "bytes": 4294967296,
+    "layout": "FAT32 fixture extended sparsely to 4 GiB; 42 video entries and 2 photo entries",
+    "physicalUSBTested": false
+  },
+  "observations": {
+    "streaming": "44 rows visible with carving at 0.0% and elapsed less than one second; no wait for scan completion.",
+    "locationTree": {
+      "Whole source": 44,
+      "PHOTOS": 2,
+      "VIDEOS": 22,
+      "Deleted video directory": 20
+    },
+    "folderSelection": "Selecting PHOTOS selected its two descendants. Filtering to PHOTOS retained both selections and showed existing/deleted record labels.",
+    "concurrentRecovery": {
+      "jobId": "1793002028928-4",
+      "scanPercentAtRecoveryStart": 36.8,
+      "scanElapsedSecondsAtRecoveryStart": 11,
+      "bothOperationMonitorsObserved": true,
+      "secondRecoveryDisabledWhileRecoveryRunning": true,
+      "sourceAndNewScanDisabledWhileEitherJobRunning": true
+    },
+    "cancelScan": {
+      "percent": 53.1,
+      "elapsedSeconds": 16,
+      "rowsRetained": 44,
+      "selectedRowsRetained": 2,
+      "resultMarkedPartial": true,
+      "recoveryStillAvailable": true
+    },
+    "preview": "PHOTO001.JPG raster preview opened after scan cancellation and displayed PHOTOS/PHOTO001.JPG, existing status, fat-metadata method and complete-chain evidence.",
+    "warnings": "Two actual warnings described tentative paths in deleted directories with cleared allocation chains; these were separate from neutral scan information.",
+    "layout": "Location tree, result table, filters and preview panel inspected in native application; no overlapping controls observed."
+  },
+  "recoveryReports": [
+    {
+      "jobId": "1793002004742-2",
+      "recovered": 2,
+      "failed": 0,
+      "bytes": 1656,
+      "files": [
+        {
+          "path": "Whole source/PHOTOS/000001_PHOTO001.JPG",
+          "originalPath": "PHOTOS/PHOTO001.JPG",
+          "bytes": 828,
+          "sha256": "8f5d588b317879812a062958575cd76af466761fd5e30e809b1d2ed70322b97e",
+          "matchesReport": true,
+          "matchesImageBytes": true,
+          "imageOffset": 574464
+        },
+        {
+          "path": "Whole source/PHOTOS/000002__HOTO002.JPG",
+          "originalPath": "PHOTOS/_HOTO002.JPG",
+          "bytes": 828,
+          "sha256": "8f5d588b317879812a062958575cd76af466761fd5e30e809b1d2ed70322b97e",
+          "matchesReport": true,
+          "matchesImageBytes": true,
+          "imageOffset": 575488
+        }
+      ]
+    },
+    {
+      "jobId": "1793002028928-4",
+      "recovered": 2,
+      "failed": 0,
+      "bytes": 1656,
+      "files": [
+        {
+          "path": "Whole source/PHOTOS/000001_PHOTO001.JPG",
+          "originalPath": "PHOTOS/PHOTO001.JPG",
+          "bytes": 828,
+          "sha256": "8f5d588b317879812a062958575cd76af466761fd5e30e809b1d2ed70322b97e",
+          "matchesReport": true,
+          "matchesImageBytes": true,
+          "imageOffset": 574464
+        },
+        {
+          "path": "Whole source/PHOTOS/000002__HOTO002.JPG",
+          "originalPath": "PHOTOS/_HOTO002.JPG",
+          "bytes": 828,
+          "sha256": "8f5d588b317879812a062958575cd76af466761fd5e30e809b1d2ed70322b97e",
+          "matchesReport": true,
+          "matchesImageBytes": true,
+          "imageOffset": 575488
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Synthetic image test, not a physical USB benchmark.",
+    "SHA-256 comparison verifies copied fixture bytes; it does not prove recoverability of arbitrary damaged originals.",
+    "Native QA exposed ETA sample/display-clock skew; subsequently fixed and covered by a focused unit test, not rechecked in this debug bundle."
+  ],
+  "frontendValidation": {
+    "build": "passed",
+    "lint": "passed",
+    "testsPassed": 54
+  }
+}

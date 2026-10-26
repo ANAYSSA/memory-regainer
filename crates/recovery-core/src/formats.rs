@@ -138,6 +138,18 @@ fn registry() -> &'static Registry {
         parse(include_str!("formats.json")).expect("checked embedded format registry")
     })
 }
+pub(crate) fn supported_ids() -> &'static [&'static str] {
+    static IDS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    IDS.get_or_init(|| {
+        registry()
+            .formats
+            .iter()
+            .filter(|f| f.enabled)
+            .map(|f| f.id.as_str())
+            .collect()
+    })
+    .as_slice()
+}
 pub fn supported_formats() -> Vec<FormatSpec> {
     registry().formats.clone()
 }
@@ -188,6 +200,14 @@ mod tests {
     #[test]
     fn registry_has_aliases_and_specific_zip_subtype_filters() {
         assert_eq!(supported_formats().len(), 11);
+        assert_eq!(
+            crate::supported_carving_types(),
+            supported_formats()
+                .iter()
+                .filter(|f| f.enabled)
+                .map(|f| f.id.as_str())
+                .collect::<Vec<_>>()
+        );
         assert!(matches_filter("JPEG", &["jpg".into()]));
         assert!(matches_filter("jpg", &["jpeg".into()]));
         assert!(matches_filter("docx", &["zip".into()]));

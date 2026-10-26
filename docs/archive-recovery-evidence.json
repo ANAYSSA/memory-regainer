@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-26",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "fixtures": "crates/recovery-core/tests/fixtures/archives",
+  "positive_recoveries": [
+    {
+      "file": "classic.zip",
+      "bytes": 162,
+      "sha256": "db27b3bac7f89a7715f131f596fe285bfc22c50ed79e8732d7e87258941f1bb0",
+      "matches_original": true,
+      "independent_validation": "Python zipfile.testzip: all members decoded and CRC checked"
+    },
+    {
+      "file": "descriptor-unsigned.zip",
+      "bytes": 174,
+      "sha256": "9ddd3c706e1b236969a6da1a3188747ad1333f000ac92ac31f8a7bd6eec6d69d",
+      "matches_original": true,
+      "independent_validation": "Python zipfile.testzip: all members decoded and CRC checked"
+    },
+    {
+      "file": "descriptor-zip64.zip",
+      "bytes": 206,
+      "sha256": "61d2f4bb8001bbf8a84ee5fb756cf686d472b5271781ea57d4a6ccb2dad7175e",
+      "matches_original": true,
+      "independent_validation": "Python zipfile.testzip: all members decoded and CRC checked"
+    },
+    {
+      "file": "descriptor.docx",
+      "bytes": 896,
+      "sha256": "57ae20a139126416f8ffc472f6774377f650185a6ce4cd60cc6659af30fb78e9",
+      "matches_original": true,
+      "independent_validation": "Python zipfile.testzip: all members decoded and CRC checked"
+    },
+    {
+      "file": "descriptor.zip",
+      "bytes": 178,
+      "sha256": "e1df8e76dfc9442e7170323305fbc64a15cc73cce22205f11e68a2c8d8d5b7c4",
+      "matches_original": true,
+      "independent_validation": "Python zipfile.testzip: all members decoded and CRC checked"
+    },
+    {
+      "file": "full-zip64.zip",
+      "bytes": 284,
+      "sha256": "53d40c716a48726161c4ae7330d153ef2dff613df483135297dbaa015d7381b6",
+      "matches_original": true,
+      "independent_validation": "Python zipfile.testzip: all members decoded and CRC checked"
+    },
+    {
+      "file": "original.docx",
+      "bytes": 848,
+      "sha256": "62d548623948b2d01e2c77ca3b226baca7be5df5c89a530ed17c2743d7a71db9",
+      "matches_original": true,
+      "independent_validation": "Python zipfile.testzip: all members decoded and CRC checked"
+    },
+    {
+      "file": "stored-rar4.rar",
+      "bytes": 111,
+      "sha256": "b72b1d2d3222df721e4bd7db56a7d61fcaaa738653a738ffffb099ba1f5f7871",
+      "matches_original": true,
+      "independent_validation": "bsdtar -xOf: original stored member bytes matched",
+      "member_sha256": "76af91d8c2a68ff3d8c6432f7d471b5aa14bbbb3388839a539ef9c732ea35081"
+    },
+    {
+      "file": "stored-rar5.rar",
+      "bytes": 96,
+      "sha256": "6146b5e06ddb33e2ad736920ace5019d70be8e0627a9ca5c32cd55de2b5589f9",
+      "matches_original": true,
+      "independent_validation": "bsdtar -xOf: original stored member bytes matched",
+      "member_sha256": "76af91d8c2a68ff3d8c6432f7d471b5aa14bbbb3388839a539ef9c732ea35081"
+    }
+  ],
+  "total_recovered_bytes": 2955,
+  "archive_integration_tests": 20,
+  "independent_tool": "bsdtar 3.5.3 - libarchive 3.7.4 zlib/1.2.12 liblzma/5.4.3 bz2lib/1.0.8",
+  "benchmark": {
+    "kind": "warm local no-signature image; release builds; not USB qualification",
+    "bytes": 134217728,
+    "sha256": "2443b658d7f2d1cc6b8b01fefc57715b8f79809fb0694b2afe2c252d32d2e849",
+    "runs": {
+      "before": [
+        "bytes=134217728 entries=0 elapsed_ms=266",
+        "bytes=134217728 entries=0 elapsed_ms=262",
+        "bytes=134217728 entries=0 elapsed_ms=262"
+      ],
+      "after": [
+        "bytes=134217728 entries=0 elapsed_ms=219",
+        "bytes=134217728 entries=0 elapsed_ms=202",
+        "bytes=134217728 entries=0 elapsed_ms=199"
+      ]
+    },
+    "baseline": "v0.1.3 HEAD core before current changes",
+    "after": "v0.2.0 working source, including maximum registry overlap fix"
+  }
+}
